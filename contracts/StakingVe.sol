@@ -52,7 +52,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
         string memory _name,
         string memory _symbol,
         address _governance
-    ) public {
+    ) {
         transferOwnership(_governance);
         StakedToken = _stakedToken;
         Name = _name;
@@ -64,16 +64,9 @@ contract StakingVe is ReentrancyGuard, Ownable {
     /// @return Quantity of tokens which have vested but are unclaimed by the specified user
     function getUnclaimed(address _userAddr) public view returns (uint256) {
         uint256 totalFundsDeposited = LockedFunds[_userAddr] + DeferredFunds[_userAddr];
-        uint256 currentBalance = getMyBalance();
+        uint256 currentBalance = getBalance(_userAddr);
         uint256 fundsToClaim = totalFundsDeposited - currentBalance;
         return fundsToClaim;
-    }
-
-    /// @notice Calculate the number of vested tokens invoking user has not claimed, see also: getUnclaimed()
-    /// @return Quantity of tokens which have vested but are unclaimed by the invoking user
-    function getMyUnclaimed() public view returns (uint256) {
-        address userAddr = msg.sender;
-        return getUnclaimed(userAddr);
     }
 
     /// @notice Calculate the number of tokens a user still has locked, see also: getMyBalance()
@@ -126,14 +119,6 @@ contract StakingVe is ReentrancyGuard, Ownable {
         return usersLock.Initialized;
     }
 
-    /// @notice Check if invoking user has ever created a Lock in this contract
-    /// @dev This may be used by the web application to determine if the UI says "Create Lock" or "Add to Lock"
-    /// @return True if invoking user has ever created a lock
-    function amILocked() public view returns (bool) {
-        address userAddr = msg.sender;
-        return isUserLocked(userAddr);
-    }
-
     /// @notice View a users Lock, see also GetMyLock()
     /// @param _userAddr Address of any user to view all Locks they have ever created
     /// @dev This may be used by the web application for graphical illustration purposes
@@ -142,28 +127,14 @@ contract StakingVe is ReentrancyGuard, Ownable {
         return Locks[_userAddr];
     }
 
-    /// @notice View the invoking users Lock, see also GetLock()
-    /// @dev This may be used by the web application for graphical illustration purposes
-    /// @return Invoking users Lock in the format of the LockVe struct
-    function getMyLock() public view returns (LockVe memory) {
-        address userAddr = msg.sender;
-        return getLock(userAddr);
-    }
-
-    /// @notice View the total quantity of deposit tokens the invoking user still has locked, see also GetBalance()
-    /// @dev This may be used by the web application for display purposes
-    /// @return Quantity of invoking users deposit tokens which are still locked by the contract 
-    function getMyBalance() public view returns (uint256) {
-        address userAddr = msg.sender;
-        return getBalance(userAddr);
-    }
-
-    /// @notice View the total quantity of governance tokens the user currently has awarded to them, see also GetPower()
-    /// @dev This may be used by the web application for display purposes
-    /// @return Quantity of invoking users governance tokens awarded by the contract
-    function getMyPower() public view returns (uint256) {
-        address userAddr = msg.sender;
-        return getPower(userAddr);
+    /// @notice Allow owner to reclaim tokens not matching the deposit token
+    /// @notice Some users may have accidentally sent these to the contract
+    /// @param _token Address of the non-deposit token
+    function ownerRemoveNonDepositToken(address _token) public nonReentrant onlyOwner {
+        require(_token != StakedToken, "!invalid");
+        uint256 balanceOfToken = IERC20(_token).balanceOf(address(this));
+        require(balanceOfToken > 0, "!balance");
+        IERC20(_token).safeTransfer(owner(), balanceOfToken);
     }
 
     /// @notice Transfers deposit tokens which have decayed over some portion of the lock period back to their original owner
@@ -172,7 +143,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
     function claimMyFunds() external nonReentrant {
         address userAddr = msg.sender;
         uint256 totalFundsDeposited = LockedFunds[userAddr] + DeferredFunds[userAddr];
-        uint256 currentBalance = getMyBalance();
+        uint256 currentBalance = getBalance(userAddr);
         uint256 fundsToClaim = totalFundsDeposited - currentBalance;
 
         IERC20(StakedToken).safeTransfer(userAddr, fundsToClaim);

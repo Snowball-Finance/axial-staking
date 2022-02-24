@@ -1,12 +1,13 @@
 import * as dotenv from "dotenv";
 
-import { HardhatUserConfig } from "hardhat/config";
 import "@nomiclabs/hardhat-etherscan";
 import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
 import "hardhat-gas-reporter";
-// import "hardhat-deploy"
+import "hardhat-deploy";
 import "solidity-coverage";
+
+import { HardhatUserConfig } from "hardhat/config";
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ const config: HardhatUserConfig = {
       forking: {
         url: "https://api.avax.network/ext/bc/C/rpc",
       },
-      // deploy: ["./deploy"],
+      deploy: ["./deploy"],
     },
     fuji: {
       url: "https://api.avax-test.network/ext/bc/C/rpc",
@@ -26,7 +27,8 @@ const config: HardhatUserConfig = {
     },
     mainnet: {
       url: "https://api.avax.network/ext/bc/C/rpc",
-      // deploy: ["./deploy/mainnet/"],
+      accounts: [process.env.PRIVATE_KEY || ""],
+      deploy: ["./deploy/mainnet/"],
     },
   },
   gasReporter: {
@@ -39,6 +41,11 @@ const config: HardhatUserConfig = {
   typechain: {
     outDir: "typechain",
     target: "ethers-v5",
+  },
+  namedAccounts: {
+    deployer: {
+      default: 0,
+    },
   },
 };
 

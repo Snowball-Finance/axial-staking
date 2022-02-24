@@ -1,7 +1,7 @@
 import { solidity } from "ethereum-waffle"
 
 // eslint-disable-next-line node/no-missing-import
-import { StakingVe, AxialTokenMock } from "../typechain"
+import { StakingVe, ERC20TokenMock } from "../typechain"
 import chai from "chai"
 import { ethers } from "hardhat"
 import { Signer } from "ethers"
@@ -21,8 +21,13 @@ describe("StakingVe", () => {
   let bob: Signer
   let carol: Signer
 
-  let axialToken: AxialTokenMock
+  let axialToken: ERC20TokenMock
   let stakingVe: StakingVe
+
+  let aliceAddr: string
+  let bobAddr: string
+  let carolAddr: string
+  let governanceAddr: string
 
   // 60s/min, 60m/hr, 24hr/day, 7day/wk, 52wk/yr
   const SECONDS_IN_A_YEAR = 60 * 60 * 24 * 7 * 52
@@ -32,10 +37,15 @@ describe("StakingVe", () => {
   beforeEach(async () => {
     [deployer, governance, alice, bob, carol] = await ethers.getSigners()
 
-    const stakingVeFactory = await ethers.getContractFactory("StakingVe");
-    axialToken = await (await ethers.getContractFactory("AxialTokenMock")).deploy("sAxial", "SAXIAL");
+    aliceAddr = await alice.getAddress()
+    bobAddr = await bob.getAddress()
+    carolAddr = await carol.getAddress()
+    governanceAddr = await governance.getAddress()
 
-    await axialToken.connect(deployer).mints([ await deployer.getAddress(), await alice.getAddress(), await bob.getAddress(), await carol.getAddress(), ], [1000, 10, 100, 500])
+    const stakingVeFactory = await ethers.getContractFactory("StakingVe");
+    axialToken = await (await ethers.getContractFactory("ERC20TokenMock")).deploy("sAxial", "SAXIAL");
+
+    await axialToken.connect(deployer).mints([ await deployer.getAddress(), aliceAddr, bobAddr, carolAddr, ], [1000, 10, 100, 500])
     stakingVe = await stakingVeFactory.deploy(axialToken.address, "sAxial", "SAXIAL", await governance.getAddress())
   })
 
@@ -54,8 +64,8 @@ describe("StakingVe", () => {
     await axialToken.connect(alice).approve(stakingVe.address, "10")
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, "10", false)
 
-    expect(await stakingVe.connect(alice).getMyBalance()).to.eq(10)
-    expect(await stakingVe.connect(alice).getMyPower()).to.eq(10)
+    expect(await stakingVe.connect(alice).getBalance(aliceAddr)).to.eq(10)
+    expect(await stakingVe.connect(alice).getPower(aliceAddr)).to.eq(10)
   })
 
   it("10 tokens locked for two years decays to 5 tokens locked and 5 governance tokens in one year", async () => {
@@ -63,7 +73,7 @@ describe("StakingVe", () => {
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, "10", false)
     await increaseTimestamp(SECONDS_IN_A_YEAR)
 
-    expect(await stakingVe.connect(alice).getMyBalance()).to.eq(5)
+    expect(await stakingVe.connect(alice).getBalance(aliceAddr)).to.eq(5)
   })
 
   it("10 tokens locked for two years decays to 0 tokens locked and 0 governance tokens in two years", async () => {
@@ -71,17 +81,17 @@ describe("StakingVe", () => {
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, "10", false)
     await increaseTimestamp(SECONDS_IN_A_YEAR * 2)
 
-    expect(await stakingVe.connect(alice).getMyBalance()).to.eq(0)
+    expect(await stakingVe.connect(alice).getBalance(aliceAddr)).to.eq(0)
   })
 
   it("user can create a lock", async () => {
     const lock_duration = SECONDS_IN_A_WEEK
     await axialToken.connect(alice).approve(stakingVe.address, "10")
     await stakingVe.connect(alice).stake(lock_duration, "10", false)
-    const lock = await stakingVe.connect(alice).getMyLock()
+    const lock = await stakingVe.connect(alice).getLock(aliceAddr)
     expect(lock.StartingAmountLocked).to.eq(10)
     expect(lock.EndBlockTime.sub(lock.StartBlockTime)).to.eq(lock_duration)
-    expect(await axialToken.balanceOf(await alice.getAddress())).to.eq(0)
+    expect(await axialToken.balanceOf(aliceAddr)).to.eq(0)
     expect(await axialToken.balanceOf(stakingVe.address)).to.eq(10)
   })
 
@@ -94,9 +104,9 @@ describe("StakingVe", () => {
     await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "100", false)
     await stakingVe.connect(carol).stake(SECONDS_IN_A_YEAR, "500", false)
 
-    const alice_lock = await stakingVe.connect(alice).getMyLock()
-    const bob_lock = await stakingVe.connect(bob).getMyLock()
-    const carol_lock = await stakingVe.connect(carol).getMyLock()
+    const alice_lock = await stakingVe.connect(alice).getLock(aliceAddr)
+    const bob_lock = await stakingVe.connect(bob).getLock(bobAddr)
+    const carol_lock = await stakingVe.connect(carol).getLock(carolAddr)
 
     expect(alice_lock.StartingAmountLocked).to.eq(10)
     expect(alice_lock.EndBlockTime.sub(alice_lock.StartBlockTime)).to.eq( SECONDS_IN_A_YEAR)
@@ -105,29 +115,29 @@ describe("StakingVe", () => {
     expect(carol_lock.StartingAmountLocked).to.eq(500)
     expect(carol_lock.EndBlockTime.sub(carol_lock.StartBlockTime)).to.eq(SECONDS_IN_A_YEAR)
 
-    expect(await stakingVe.connect(alice).getMyPower()).to.eq(4)
-    expect(await stakingVe.connect(bob).getMyPower()).to.eq(49)
-    expect(await stakingVe.connect(carol).getMyPower()).to.eq(250)
+    expect(await stakingVe.connect(alice).getPower(aliceAddr)).to.eq(4)
+    expect(await stakingVe.connect(bob).getPower(bobAddr)).to.eq(49)
+    expect(await stakingVe.connect(carol).getPower(carolAddr)).to.eq(250)
   })
 
   it("Balance, Power linearly decay over time and can be claimed repeatedly", async () => {
     // Give alice a holiday bonus
-    await axialToken.connect(deployer).mints([await alice.getAddress()], [90])
+    await axialToken.connect(deployer).mints([aliceAddr], [90])
 
     await axialToken.connect(alice).approve(stakingVe.address, "100")
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, "100", false)
 
-    let balance = await stakingVe.connect(alice).getMyBalance()
-    let power = await stakingVe.connect(alice).getMyPower()
-    let inWallet = await axialToken.balanceOf(await alice.getAddress())
+    let balance = await stakingVe.connect(alice).getBalance(aliceAddr)
+    let power = await stakingVe.connect(alice).getPower(aliceAddr)
+    let inWallet = await axialToken.balanceOf(aliceAddr)
     console.log("Day %d, Balance: %d Power: %d, Wallet: %d", 0, balance, power, inWallet, )
 
     for (let i = 1; i < 104; ++i) {
       await increaseTimestamp(SECONDS_IN_A_WEEK)
-      balance = await stakingVe.connect(alice).getMyBalance()
-      power = await stakingVe.connect(alice).getMyPower()
+      balance = await stakingVe.connect(alice).getBalance(aliceAddr)
+      power = await stakingVe.connect(alice).getPower(aliceAddr)
       await stakingVe.connect(alice).claimMyFunds()
-      inWallet = await axialToken.balanceOf(await alice.getAddress())
+      inWallet = await axialToken.balanceOf(aliceAddr)
       console.log("Week: %d, Balance: %d Power: %d, Wallet: %d", i, balance, power, inWallet)
       expect(balance.add(inWallet)).to.eq(100)
       expect(balance).to.eq(power)
@@ -143,14 +153,14 @@ describe("StakingVe", () => {
 
     await increaseTimestamp(SECONDS_IN_A_YEAR)
 
-    const balance = await stakingVe.getBalance(await alice.getAddress())
+    const balance = await stakingVe.getBalance(aliceAddr)
 
     await stakingVe.connect(alice).claimMyFunds()
-    const inWallet = await axialToken.balanceOf(await alice.getAddress())
+    const inWallet = await axialToken.balanceOf(aliceAddr)
     await stakingVe.connect(alice).claimMyFunds()
-    const inWalletAfterClaimingTwice = await axialToken.balanceOf(await alice.getAddress())
+    const inWalletAfterClaimingTwice = await axialToken.balanceOf(aliceAddr)
     await stakingVe.connect(bob).claimMyFunds()
-    const inBobsWallet = await axialToken.balanceOf(await bob.getAddress())
+    const inBobsWallet = await axialToken.balanceOf(bobAddr)
 
     expect(inWallet).to.eq(inWalletAfterClaimingTwice)
     expect(inBobsWallet).to.eq(51)
@@ -166,22 +176,22 @@ describe("StakingVe", () => {
   it("Balance, Power linearly decay over time and can be claimed repeatedly with lock time increasing", async () => {
 
     // Give alice a holiday bonus
-    await axialToken.connect(deployer).mints([await alice.getAddress()], [90]);
+    await axialToken.connect(deployer).mints([aliceAddr], [90]);
 
     await axialToken.connect(alice).approve(stakingVe.address, '100');
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, '100', false);
 
-    let balance = await stakingVe.connect(alice).getMyBalance();
-    let power = await stakingVe.connect(alice).getMyPower();
-    let inWallet = await axialToken.balanceOf(await alice.getAddress());
+    let balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+    let power = await stakingVe.connect(alice).getPower(aliceAddr);
+    let inWallet = await axialToken.balanceOf(aliceAddr);
     console.log("Day %d, Balance: %d Power: %d, Wallet: %d", 0, balance, power, inWallet);
 
     for (let i = 1; i < 104; ++i) {
       await (increaseTimestamp(SECONDS_IN_A_WEEK));
-      balance = await stakingVe.connect(alice).getMyBalance();
-      power = await stakingVe.connect(alice).getMyPower();
+      balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+      power = await stakingVe.connect(alice).getPower(aliceAddr);
       await stakingVe.connect(alice).claimMyFunds();
-      inWallet = await axialToken.balanceOf(await alice.getAddress());
+      inWallet = await axialToken.balanceOf(aliceAddr);
       console.log("Week: %d, Balance: %d Power: %d, Wallet: %d", i, balance, power, inWallet);
       expect(balance.add(inWallet)).to.eq(100);
 
@@ -196,23 +206,23 @@ describe("StakingVe", () => {
   it("Balance, Power linearly decay over time and can be deferred", async () => {
 
     // Give alice a holiday bonus
-    await axialToken.connect(deployer).mints([await alice.getAddress()], [90]);
+    await axialToken.connect(deployer).mints([aliceAddr], [90]);
 
     await axialToken.connect(alice).approve(stakingVe.address, '100');
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, '100', false);
 
-    let balance = await stakingVe.connect(alice).getMyBalance();
-    let power = await stakingVe.connect(alice).getMyPower();
-    let inWallet = await axialToken.balanceOf(await alice.getAddress());
-    let deferred = await stakingVe.connect(alice).getMyUnclaimed();
+    let balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+    let power = await stakingVe.connect(alice).getPower(aliceAddr);
+    let inWallet = await axialToken.balanceOf(aliceAddr);
+    let deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
     console.log("Day %d, Balance: %d Power: %d, Wallet: %d, Deferred: %d", 0, balance, power, inWallet, deferred);
 
     for (let i = 1; i < 104; ++i) {
       await (increaseTimestamp(SECONDS_IN_A_WEEK));
-      balance = await stakingVe.connect(alice).getMyBalance();
-      power = await stakingVe.connect(alice).getMyPower();
-      inWallet = await axialToken.balanceOf(await alice.getAddress());
-      let deferred = await stakingVe.connect(alice).getMyUnclaimed();
+      balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+      power = await stakingVe.connect(alice).getPower(aliceAddr);
+      inWallet = await axialToken.balanceOf(aliceAddr);
+      let deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
       console.log("Day %d, Balance: %d Power: %d, Wallet: %d, Deferred: %d", i, balance, power, inWallet, deferred);
       expect(balance.add(inWallet).add(deferred)).to.eq(100);
 
@@ -228,7 +238,7 @@ describe("StakingVe", () => {
 
   it("User can autocompound their lock", async () => {
     // Alice's holiday bonus
-    await axialToken.connect(deployer).mints([await alice.getAddress()], [990])
+    await axialToken.connect(deployer).mints([aliceAddr], [990])
     await axialToken.connect(alice).approve(stakingVe.address, 1000)
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, 1000, false)
 
@@ -237,15 +247,15 @@ describe("StakingVe", () => {
     for (let i = 0; i < 100; ++i) {
       await increaseTimestamp(SECONDS_IN_A_DAY)
 
-      await axialToken.connect(deployer).mints([await alice.getAddress()], [interest])
+      await axialToken.connect(deployer).mints([aliceAddr], [interest])
 
-      let dividends = await axialToken.balanceOf(await alice.getAddress())
+      let dividends = await axialToken.balanceOf(aliceAddr)
       await axialToken.connect(alice).approve(stakingVe.address, dividends)
       await stakingVe.connect(alice).stake(SECONDS_IN_A_DAY, dividends, false);
 
-      const balance = await stakingVe.connect(alice).getMyBalance()
-      const power = await stakingVe.connect(alice).getMyPower()
-      const inWallet = await axialToken.balanceOf(await alice.getAddress())
+      const balance = await stakingVe.connect(alice).getBalance(aliceAddr)
+      const power = await stakingVe.connect(alice).getPower(aliceAddr)
+      const inWallet = await axialToken.balanceOf(aliceAddr)
       interest = power.div(100).toNumber(); // Let's say we make 1% of our power in gains every day 
       console.log("Day %d, Balance: %d Power: %d, Wallet: %d, Interest: %d", i, balance, power, inWallet, interest)
     }
@@ -259,13 +269,13 @@ describe("StakingVe", () => {
     for (let i = 0; i < 256; ++i) {
       let extension = 2 ** i;
 
-      let lockBeforeExtension = await(stakingVe.connect(alice).getMyLock())
+      let lockBeforeExtension = await(stakingVe.connect(alice).getLock(aliceAddr))
       let duration = lockBeforeExtension.EndBlockTime.toNumber() - lockBeforeExtension.StartBlockTime.toNumber();
       if (duration + extension > SECONDS_IN_A_YEAR * 2) {
         await expect(stakingVe.connect(alice).stake(extension, 0, false)).to.be.reverted
       } else {
         await stakingVe.connect(alice).stake(extension, 0, false)
-        let lockAfterExtension = await(stakingVe.connect(alice).getMyLock())
+        let lockAfterExtension = await(stakingVe.connect(alice).getLock(aliceAddr))
         expect(lockAfterExtension.EndBlockTime.toNumber()).to.be.greaterThanOrEqual(lockBeforeExtension.EndBlockTime.toNumber())
         let years = (lockAfterExtension.EndBlockTime.toNumber() - lockAfterExtension.StartBlockTime.toNumber()) / (SECONDS_IN_A_YEAR * 2)
         //console.log("Lock may be for %d years", years)
@@ -280,7 +290,7 @@ describe("StakingVe", () => {
     await stakingVe.connect(alice).claimMyFunds()
     await increaseTimestamp(SECONDS_IN_A_YEAR)
     await stakingVe.connect(alice).claimMyFunds();
-    const inWallet = await axialToken.balanceOf(await alice.getAddress())
+    const inWallet = await axialToken.balanceOf(aliceAddr)
     expect(inWallet).to.eq(10)
   })
 
@@ -291,16 +301,43 @@ describe("StakingVe", () => {
     await stakingVe.connect(alice).claimMyFunds()
     await increaseTimestamp(SECONDS_IN_A_YEAR)
     await stakingVe.connect(alice).claimMyFunds();
-    let inWallet = await axialToken.balanceOf(await alice.getAddress())
+    let inWallet = await axialToken.balanceOf(aliceAddr)
     expect(inWallet).to.eq(10)
     await axialToken.connect(alice).approve(stakingVe.address, 10)
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 10, false)
 
-    let balance = await stakingVe.connect(alice).getMyBalance();
-    let power = await stakingVe.connect(alice).getMyPower();
-    inWallet = await axialToken.balanceOf(await alice.getAddress());
+    let balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+    let power = await stakingVe.connect(alice).getPower(aliceAddr);
+    inWallet = await axialToken.balanceOf(aliceAddr);
     console.log("Balance: %d Power: %d, Wallet: %d", balance, power, inWallet);
-    expect(await stakingVe.connect(alice).getMyPower()).to.eq(5);
+    expect(await stakingVe.connect(alice).getPower(aliceAddr)).to.eq(5);
+  })
+
+  it("Governance cannot withdraw Staked tokens", async () => {
+    await axialToken.connect(alice).approve(stakingVe.address, 10)
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 10, false)
+
+    await expect(stakingVe.connect(governance).ownerRemoveNonDepositToken(axialToken.address)).to.be.revertedWith("!invalid");
+
+    let axialTokenOwnedByStaking = await axialToken.balanceOf(stakingVe.address);
+    let axialTokenOwnedByGovernance = await axialToken.balanceOf(governanceAddr);
+    expect(axialTokenOwnedByStaking).to.eq(10);
+    expect(axialTokenOwnedByGovernance).to.eq(0);
+  })
+
+  it("Governance can withdraw tokens other than the staked one", async () => {
+    let stakingVeAddr = stakingVe.address;
+    let coaxialToken : ERC20TokenMock = await (await ethers.getContractFactory("ERC20TokenMock")).deploy("Coaxial", "COAX");
+    await coaxialToken.connect(deployer).mints([aliceAddr], [1000])
+    await coaxialToken.connect(alice).approve(aliceAddr, 1000);
+    await coaxialToken.connect(alice).transferFrom(aliceAddr, stakingVeAddr, 1000);
+    let coaxialOwnedByStaking = await coaxialToken.balanceOf(stakingVeAddr);
+    expect(coaxialOwnedByStaking).to.eq(1000);
+    await stakingVe.connect(governance).ownerRemoveNonDepositToken(coaxialToken.address);
+    coaxialOwnedByStaking = await coaxialToken.balanceOf(stakingVeAddr);
+    let coaxialOwnedByGovernance = await coaxialToken.balanceOf(governanceAddr);
+    expect(coaxialOwnedByStaking).to.eq(0);
+    expect(coaxialOwnedByGovernance).to.eq(1000);
   })
 
 })
