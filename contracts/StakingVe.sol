@@ -59,7 +59,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
         Symbol = _symbol;
     }
 
-    /// @notice Calculate the number of vested tokens a user has not claimed, see also: getMyUnclaimed()
+    /// @notice Calculate the number of vested tokens a user has not claimed
     /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
     /// @return Quantity of tokens which have vested but are unclaimed by the specified user
     function getUnclaimed(address _userAddr) public view returns (uint256) {
@@ -69,7 +69,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
         return fundsToClaim;
     }
 
-    /// @notice Calculate the number of tokens a user still has locked, see also: getMyBalance()
+    /// @notice Calculate the number of tokens a user still has locked
     /// @param _userAddr Address of any user to view the number of tokens they still have locked
     /// @return Quantity of tokens the user has locked
     function getBalance(address _userAddr) public view returns (uint256) {
@@ -85,7 +85,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
         return balance;
     }
 
-    /// @notice Calculate the number of governance tokens allocated to a user by this contract, see also: getMyPower()
+    /// @notice Calculate the number of governance tokens currently allocated to a user by this contract
     /// @param _userAddr Address of any user to view the number of governance tokens currently awarded to them
     /// @return Quantity of governance tokens allocated to the user
     function getPower(address _userAddr) public view returns (uint256) {
@@ -95,8 +95,9 @@ contract StakingVe is ReentrancyGuard, Ownable {
         uint256 power = 0;
 
         if (usersLock.EndBlockTime > currentTimestamp) {
-            // We need to accomodate for the fact that we are dealing only in whole numbers
-            // uint256 delta = (lock.EndBlockTime - currentTimestamp) / (lock.EndBlockTime - lock.StartBlockTime);
+            // let delta = elapsed / totalLocktinme
+            // let startingPower = duration / 2 years
+            // let power = delta * startingPower
             uint256 startingAmountAwarded = ((usersLock.EndBlockTime - usersLock.StartBlockTime) * usersLock.StartingAmountLocked) / 104 weeks;
             uint256 granularDelta = ((usersLock.EndBlockTime - currentTimestamp) * InterpolationGranularity) / (usersLock.EndBlockTime - usersLock.StartBlockTime);
             power += (startingAmountAwarded * granularDelta) / InterpolationGranularity;
@@ -119,7 +120,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
         return usersLock.Initialized;
     }
 
-    /// @notice View a users Lock, see also GetMyLock()
+    /// @notice View a users Lock
     /// @param _userAddr Address of any user to view all Locks they have ever created
     /// @dev This may be used by the web application for graphical illustration purposes
     /// @return Users Lock in the format of the LockVe struct
@@ -137,8 +138,8 @@ contract StakingVe is ReentrancyGuard, Ownable {
         IERC20(_token).safeTransfer(owner(), balanceOfToken);
     }
 
-    /// @notice Transfers deposit tokens which have decayed over some portion of the lock period back to their original owner
-    /// @notice It is up to the user to invoke this in order to reclaim their original deposit tokens over time
+    /// @notice Transfers vested tokens back to their original owner
+    /// @notice It is up to the user to invoke this manually
     /// @dev This will need to be called by the web application via a button or some other means
     function claimMyFunds() external nonReentrant {
         address userAddr = msg.sender;
