@@ -353,7 +353,9 @@ describe("StakingVe", () => {
 
     let users = await stakingVe.connect(alice).getAllUsers()
 
-    console.log("Users: ", users)
+    //console.log("Users: ", users)
+
+    expect(users.length).to.eq(3)
   })
 
 })
