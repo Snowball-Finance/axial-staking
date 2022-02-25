@@ -340,7 +340,7 @@ describe("StakingVe", () => {
     expect(coaxialOwnedByGovernance).to.eq(1000);
   })
 
-  it.only("getAllUsers returns an array of all users that have ever staked", async() => {
+  it("getAllUsers returns an array of all users that have ever staked", async() => {
     await axialToken.connect(alice).approve(stakingVe.address, "10")
     await axialToken.connect(bob).approve(stakingVe.address, "100")
     await axialToken.connect(carol).approve(stakingVe.address, "500")
