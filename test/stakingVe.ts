@@ -340,4 +340,20 @@ describe("StakingVe", () => {
     expect(coaxialOwnedByGovernance).to.eq(1000);
   })
 
+  it.only("getAllUsers returns an array of all users that have ever staked", async() => {
+    await axialToken.connect(alice).approve(stakingVe.address, "10")
+    await axialToken.connect(bob).approve(stakingVe.address, "100")
+    await axialToken.connect(carol).approve(stakingVe.address, "500")
+
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, "10", false)
+    await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "100", false)
+    await stakingVe.connect(carol).stake(SECONDS_IN_A_YEAR * 2, "500", false)
+
+    await increaseTimestamp(SECONDS_IN_A_YEAR + 1)
+
+    let users = await stakingVe.connect(alice).getAllUsers()
+
+    console.log("Users: ", users)
+  })
+
 })
