@@ -160,7 +160,7 @@ contract StakingVe is ReentrancyGuard, Ownable {
     function stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed) public nonReentrant {
         require(_duration > 0 || _amount > 0, "null");
 
-        // Retrieve list of locks the user has already created
+        // Retrieve lock the user may have already created
         address userAddr = msg.sender;
         LockVe memory usersLock = Locks[userAddr];
 
