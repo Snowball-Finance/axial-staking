@@ -15,7 +15,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 //import "hardhat/console.sol";
 
-contract StakingVe is ReentrancyGuard, Ownable {
+contract VestingStake is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // Info pertaining to staking contract

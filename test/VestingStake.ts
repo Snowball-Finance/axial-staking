@@ -1,7 +1,7 @@
 import { solidity } from "ethereum-waffle"
 
 // eslint-disable-next-line node/no-missing-import
-import { StakingVe, ERC20TokenMock } from "../typechain"
+import { VestingStake, ERC20TokenMock } from "../typechain"
 import chai from "chai"
 import { ethers } from "hardhat"
 import { Signer } from "ethers"
@@ -14,7 +14,7 @@ async function increaseTimestamp(amount: number) {
   await ethers.provider.send('evm_mine', []);
 }
 
-describe("StakingVe", () => {
+describe("VestingStake", () => {
   let deployer: Signer
   let governance: Signer
   let alice: Signer
@@ -22,7 +22,7 @@ describe("StakingVe", () => {
   let carol: Signer
 
   let axialToken: ERC20TokenMock
-  let stakingVe: StakingVe
+  let stakingVe: VestingStake
 
   let aliceAddr: string
   let bobAddr: string
@@ -42,8 +42,8 @@ describe("StakingVe", () => {
     carolAddr = await carol.getAddress()
     governanceAddr = await governance.getAddress()
 
-    const stakingVeFactory = await ethers.getContractFactory("StakingVe");
-    axialToken = await (await ethers.getContractFactory("ERC20TokenMock")).deploy("sAxial", "SAXIAL");
+    const stakingVeFactory = await ethers.getContractFactory("VestingStake");
+    axialToken = await (await ethers.getContractFactory("ERC20TokenMock")).deploy("Axial", "AXIAL");
 
     await axialToken.connect(deployer).mints([ await deployer.getAddress(), aliceAddr, bobAddr, carolAddr, ], [1000, 10, 100, 500])
     stakingVe = await stakingVeFactory.deploy(axialToken.address, "sAxial", "SAXIAL", await governance.getAddress())
