@@ -1,4 +1,4 @@
-import * as dotenv from "dotenv";
+import "dotenv/config";
 
 import "@nomiclabs/hardhat-etherscan";
 import "@nomiclabs/hardhat-waffle";
@@ -8,8 +8,6 @@ import "hardhat-deploy";
 import "solidity-coverage";
 
 import { HardhatUserConfig } from "hardhat/config";
-
-dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: "0.8.9",
@@ -36,7 +34,7 @@ const config: HardhatUserConfig = {
     currency: "USD",
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY,
+    apiKey: process.env.SNOWTRACE_API_KEY,
   },
   typechain: {
     outDir: "typechain",
