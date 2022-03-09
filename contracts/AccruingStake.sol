@@ -6,6 +6,7 @@ pragma solidity 0.8.9;
 /// @notice Allows you to lock tokens in exchange for distribution tokens
 /// @notice Locks can be deposited into or closed
 /// @dev Simply call stake(...) to deposit tokens
+/// @dev Call updateAllUsersAccrual(0), then getAccrued(user) / getTotalAccrued() = users share
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -171,7 +172,6 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         if (_chunkSize == 0) _chunkSize = totalUsersLocked; // if 0 was passed in, try to update all users
 
         for (uint256 i = 0; i < _chunkSize; i++) {
-            console.log("accruing index %d", LastUserIndexUpdated);
             _updateUsersAccrual(Users[LastUserIndexUpdated]);
             LastUserIndexUpdated += 1;
             LastUserIndexUpdated %= totalUsersLocked;
