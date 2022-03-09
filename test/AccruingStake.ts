@@ -154,17 +154,17 @@ describe("AccruingStake", () => {
   it("Accrual cannot be manipulated by sync rate", async () => {
     await axialToken.connect(alice).approve(stakingAc.address, 10)
     await stakingAc.connect(alice).stake(10)
-    await increaseTimestamp(10)
+    await increaseTimestamp(SECONDS_IN_A_YEAR)
     await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
 
     await stakingAc.connect(alice).claimMyFunds()
-    
+
 
     await axialToken.connect(alice).approve(stakingAc.address, 10)
     await stakingAc.connect(alice).stake(10)
-    for (let i = 0; i < 10; i++ ) {
-        await increaseTimestamp(1)
+    for (let i = 0; i < 52; i++ ) {
+        await increaseTimestamp(SECONDS_IN_A_WEEK)
         await stakingAc.connect(alice).updateAllUsersAccrual(0)
     }
     let accruedAgain = await stakingAc.connect(alice).getAccrued(aliceAddr)
@@ -172,8 +172,11 @@ describe("AccruingStake", () => {
     //await stakingAc.connect(alice).updateAllUsersAccrual(0)
     await stakingAc.connect(alice).claimMyFunds()
 
-    console.log("Checking congruency")
-    expect(accrued).to.eq(accruedAgain)
+    // Because EVM, TS, etc add latency there will be some level of discrepancy
+    // The following math rounds each accrual down to the nearest day
+    let accruedDayResolution = accrued.toNumber() - (accrued.toNumber() % SECONDS_IN_A_DAY)
+    let accruedAgainDayResolution = accruedAgain.toNumber() - (accruedAgain.toNumber() % SECONDS_IN_A_DAY)
+    expect(accruedDayResolution).to.eq(accruedAgainDayResolution)
   })
 
   /*
