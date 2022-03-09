@@ -85,11 +85,11 @@ describe("AccruingStake", () => {
     await increaseTimestamp(SECONDS_IN_A_YEAR)
     await stakingAc.connect(alice).updateAllUsersAccrual(0)
 
-    await stakingAc.connect(alice).claimMyFunds()
+    await stakingAc.connect(alice).withdrawMyFunds()
     const inWallet = await axialToken.balanceOf(aliceAddr)
-    await expect(stakingAc.connect(alice).claimMyFunds()).to.be.revertedWith("!funds");
+    await expect(stakingAc.connect(alice).withdrawMyFunds()).to.be.revertedWith("!funds");
     const inWalletAfterClaimingTwice = await axialToken.balanceOf(aliceAddr)
-    await stakingAc.connect(bob).claimMyFunds()
+    await stakingAc.connect(bob).withdrawMyFunds()
     const inBobsWallet = await axialToken.balanceOf(bobAddr)
 
     expect(inWallet).to.eq(inWalletAfterClaimingTwice)
@@ -133,7 +133,7 @@ describe("AccruingStake", () => {
     await increaseTimestamp(SECONDS_IN_A_YEAR/2)
     await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
-    await stakingAc.connect(alice).claimMyFunds()
+    await stakingAc.connect(alice).withdrawMyFunds()
     await increaseTimestamp(SECONDS_IN_A_YEAR)
 
     await axialToken.connect(alice).approve(stakingAc.address, 10)
@@ -141,7 +141,7 @@ describe("AccruingStake", () => {
     await increaseTimestamp(SECONDS_IN_A_YEAR/2)
     await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accruedAgain = await stakingAc.connect(alice).getAccrued(aliceAddr)
-    await stakingAc.connect(alice).claimMyFunds()
+    await stakingAc.connect(alice).withdrawMyFunds()
 
     expect(accrued).to.eq(accruedAgain)
 
@@ -158,7 +158,7 @@ describe("AccruingStake", () => {
     await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
 
-    await stakingAc.connect(alice).claimMyFunds()
+    await stakingAc.connect(alice).withdrawMyFunds()
 
 
     await axialToken.connect(alice).approve(stakingAc.address, 10)
@@ -170,7 +170,7 @@ describe("AccruingStake", () => {
     let accruedAgain = await stakingAc.connect(alice).getAccrued(aliceAddr)
     //await increaseTimestamp(SECONDS_IN_A_YEAR/2)
     //await stakingAc.connect(alice).updateAllUsersAccrual(0)
-    await stakingAc.connect(alice).claimMyFunds()
+    await stakingAc.connect(alice).withdrawMyFunds()
 
     // Because EVM, TS, etc add latency there will be some level of discrepancy
     // The following math rounds each accrual down to the nearest day
@@ -179,15 +179,14 @@ describe("AccruingStake", () => {
     expect(accruedDayResolution).to.eq(accruedAgainDayResolution)
   })
 
-  /*
 
   it("Governance cannot withdraw Staked tokens", async () => {
-    await axialToken.connect(alice).approve(stakingVe.address, 10)
-    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 10, false)
+    await axialToken.connect(alice).approve(stakingAc.address, 10)
+    await stakingAc.connect(alice).stake(10)
 
-    await expect(stakingVe.connect(governance).ownerRemoveNonDepositToken(axialToken.address)).to.be.revertedWith("!invalid");
+    await expect(stakingAc.connect(governance).ownerRemoveNonDepositToken(axialToken.address)).to.be.revertedWith("!invalid");
 
-    let axialTokenOwnedByStaking = await axialToken.balanceOf(stakingVe.address);
+    let axialTokenOwnedByStaking = await axialToken.balanceOf(stakingAc.address);
     let axialTokenOwnedByGovernance = await axialToken.balanceOf(governanceAddr);
     expect(axialTokenOwnedByStaking).to.eq(10);
     expect(axialTokenOwnedByGovernance).to.eq(0);
@@ -208,23 +207,24 @@ describe("AccruingStake", () => {
     expect(coaxialOwnedByGovernance).to.eq(1000);
   })
 
-  it("getAllUsers returns an array of all users that have ever staked", async() => {
-    await axialToken.connect(alice).approve(stakingVe.address, "10")
-    await axialToken.connect(bob).approve(stakingVe.address, "100")
-    await axialToken.connect(carol).approve(stakingVe.address, "500")
+  it("getAllUsers returns an array of all users that are currently staked", async() => {
+    await axialToken.connect(alice).approve(stakingAc.address, "10")
+    await axialToken.connect(bob).approve(stakingAc.address, "100")
+    await axialToken.connect(carol).approve(stakingAc.address, "500")
 
-    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, "10", false)
-    await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "100", false)
-    await stakingVe.connect(carol).stake(SECONDS_IN_A_YEAR * 2, "500", false)
+    await stakingAc.connect(alice).stake(10)
+    await stakingAc.connect(bob).stake(100)
+    await stakingAc.connect(carol).stake(500)
 
     await increaseTimestamp(SECONDS_IN_A_YEAR + 1)
 
-    let users = await stakingVe.connect(alice).getAllUsers()
+    await stakingAc.connect(bob).withdrawMyFunds()
 
-    //console.log("Users: ", users)
+    let users = await stakingAc.connect(alice).getAllUsers()
 
-    expect(users.length).to.eq(3)
+    console.log("Users: ", users)
+
+    expect(users.length).to.eq(2)
   })
-*/
 
 })

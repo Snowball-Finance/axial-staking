@@ -97,7 +97,7 @@ contract AccruingStake is ReentrancyGuard, Ownable {
     /// @notice Transfers deposited tokens back to their original owner
     /// @notice This will reset the users accrual!
     /// @dev This could be called by the web application via a button or some other means
-    function claimMyFunds() external nonReentrant {
+    function withdrawMyFunds() external nonReentrant {
         address userAddr = msg.sender;
         uint256 fundsToClaim = Locks[userAddr].StakedTokens;
 
