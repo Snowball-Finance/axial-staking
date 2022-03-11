@@ -4,7 +4,7 @@ import { solidity } from "ethereum-waffle"
 import { AccruingStake, ERC20TokenMock } from "../typechain"
 import chai from "chai"
 import { ethers } from "hardhat"
-import { Signer } from "ethers"
+import { BigNumber, Signer } from "ethers"
 
 chai.use(solidity)
 const { expect } = chai
@@ -225,6 +225,35 @@ describe("AccruingStake", () => {
     console.log("Users: ", users)
 
     expect(users.length).to.eq(2)
+  })
+
+  it.only("Estimating gas", async() => {
+    let accounts: Signer[] = await ethers.getSigners()
+    let costs: number[] = []
+    let average: number = 0
+
+    for (let i = 0; i < accounts.length; ++i) {
+        let addr = await accounts[i].getAddress()
+        let previousGasCost = (await stakingAc.estimateGas.updateAllUsersAccrual(0)).toNumber()
+        await axialToken.connect(deployer).mints([ addr ], [10])
+        await axialToken.connect(accounts[i]).approve(stakingAc.address, 10)
+        await stakingAc.connect(accounts[i]).stake(10)
+        await increaseTimestamp(SECONDS_IN_A_DAY)
+        let gasCost = (await stakingAc.estimateGas.updateAllUsersAccrual(0)).toNumber()
+        await stakingAc.connect(deployer).updateAllUsersAccrual(0)
+        let costDifference = gasCost - previousGasCost
+        //console.log("%s: %d - %d = %d", addr, gasCost, previousGasCost, costDifference)
+        costs.push(gasCost)
+        average += costDifference
+    }
+
+    average /= (accounts.length) - 1
+    let baseCost = costs[0] - average
+    console.log("Base Cost of Accrual Sync is %d", baseCost)
+    console.log("Each user scales cost of accrual sync by ~%d", average)
+
+    // TODO: Determine maximum numUsers
+    // Where baseCost + average*numUsers < block limit
   })
 
 })
