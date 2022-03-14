@@ -2,6 +2,7 @@
 pragma solidity 0.8.9;
 
 import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
+import {StakedAxialToken} from "./StakedAxialToken.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
@@ -14,23 +15,33 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    // ==================== External Dependencies ==================== //
+
+    /// @notice the Axial token contraxt
+    IERC20 public constant AXIAL =
+        IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
+
+    /// @notice token for voting on Axial distribution to pools - SAXIAL
+    StakedAxialToken public constant SAXIAL =
+        StakedAxialToken(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: get actual address
+
+    /// @notice token to allow boosting rewards - VEAXIAL
+    IERC20 public constant VEAXIAL =
+        IERC20(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: get actual address
+
+    /// @notice token to be staked in return for rewards
+    IERC20 public immutable poolToken;
+
+    /// TODO: Not used. Remove?
+    IERC20 public constant TREASURY =
+        IERC20(0x4980AD7cCB304f7d3c5053Aa1131eD1EDaf48809);
+
+    // ==================== Events ==================== //
+
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward, address token);
     event RewardAdded(uint256 reward, address token);
-
-    // IERC20 public constant AXIAL = IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
-    // IERC20 public XAXIAL;
-
-    IERC20 public constant SNOWCONE =
-        IERC20(0x83952E7ab4aca74ca96217D6F8f7591BEaD6D64E);
-    IERC20 public constant SNOWBALL =
-        IERC20(0xC38f41A296A4493Ff429F1238e030924A1542e50);
-
-    IERC20 public constant TREASURY =
-        IERC20(0x4980AD7cCB304f7d3c5053Aa1131eD1EDaf48809);
-
-    IERC20 public immutable token;
 
     address[] public rewardTokens;
     address public distribution;
@@ -42,14 +53,18 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     uint256 public lastUpdateTime;
 
+    /// @dev user => token => amount
     mapping(address => mapping(address => uint256))
         public userRewardPerTokenPaid;
-    mapping(address => mapping(address => uint256)) public rewards; // user => token => amount
+    /// @dev user => token => amount
+    mapping(address => mapping(address => uint256)) public rewards;
 
     uint256 private _totalSupply;
     uint256 public derivedSupply;
     mapping(address => uint256) private _balances;
     mapping(address => uint256) public derivedBalances;
+
+    // ==================== Modifiers ==================== //
 
     modifier updateReward(address account) {
         for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -79,7 +94,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     }
 
     constructor(address _token, address _governance) {
-        token = IERC20(_token);
+        poolToken = IERC20(_token);
         distribution = msg.sender;
         governance = _governance;
     }
