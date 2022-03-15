@@ -154,13 +154,77 @@ contract AccruingStake is ReentrancyGuard, Ownable {
     /// @param _userAddr address of user to update
     /// @dev This will be called by the updateAllUsersAccrual function
     function _updateUsersAccrual(address _userAddr) private {
-        uint256 currentTime = block.timestamp;
-        uint256 duration = currentTime - Locks[_userAddr].TimeStamp;
-        uint256 accrual = duration * Locks[_userAddr].StakedTokens;
+        AccrueVe storage lock = Locks[_userAddr];
+        uint256 blockTimestamp = block.timestamp;
+
+        uint256 accrual = (blockTimestamp - lock.TimeStamp) * lock.StakedTokens;
         TotalTockensAccrued += accrual;
-        Locks[_userAddr].TimeStamp = currentTime;
-        Locks[_userAddr].AccruedTokens += accrual;
+
+        lock.TimeStamp = blockTimestamp;
+        lock.AccruedTokens += accrual;
     }
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     AccrueVe storage lock = Locks[_userAddr];
+    //     uint256 blockTimestamp = block.timestamp;
+
+    //     uint256 accrual = (blockTimestamp - lock.TimeStamp) * lock.StakedTokens;
+    //     TotalTockensAccrued += accrual;
+
+    //     lock.TimeStamp = blockTimestamp;
+    //     lock.AccruedTokens += accrual;
+    // } // 219
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     AccrueVe memory lock = Locks[_userAddr];
+    //     uint256 blockTimestamp = block.timestamp;
+
+    //     uint256 accrual = (blockTimestamp - lock.TimeStamp) * lock.StakedTokens;
+    //     TotalTockensAccrued += accrual;
+
+    //     lock.TimeStamp = blockTimestamp;
+    //     lock.AccruedTokens += accrual;
+
+    //     Locks[_userAddr] = lock;
+    // } // 191
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     uint256 accrual = (block.timestamp - Locks[_userAddr].TimeStamp) * Locks[_userAddr].StakedTokens;
+    //     TotalTockensAccrued += accrual;
+    //     Locks[_userAddr].TimeStamp = block.timestamp;
+    //     Locks[_userAddr].AccruedTokens += accrual;
+    // } // 217
+
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     uint256 accrual = (block.timestamp - Locks[_userAddr].TimeStamp) * Locks[_userAddr].StakedTokens;
+    //     TotalTockensAccrued += accrual;
+    //     Locks[_userAddr].TimeStamp = block.timestamp;
+    //     Locks[_userAddr].AccruedTokens += accrual;
+    // } // 208
+
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     uint256 accrual = (block.timestamp - Locks[_userAddr].TimeStamp) * Locks[_userAddr].StakedTokens;
+    //     TotalTockensAccrued += accrual;
+    //     Locks[_userAddr].TimeStamp = block.timestamp;
+    //     Locks[_userAddr].AccruedTokens += accrual;
+    // }
+    // Base Cost of Accrual Sync is 65930.1052631579
+    // Each user scales cost of accrual sync by ~38364.89473684211
+    // Accrual can be calculated in blocks of 206.80546497414713 users per call
+
+    // function _updateUsersAccrual(address _userAddr) private {
+    //     uint256 currentTime = block.timestamp;
+    //     uint256 duration = currentTime - Locks[_userAddr].TimeStamp;
+    //     uint256 accrual = duration * Locks[_userAddr].StakedTokens;
+    //     TotalTockensAccrued += accrual;
+    //     Locks[_userAddr].TimeStamp = currentTime;
+    //     Locks[_userAddr].AccruedTokens += accrual;
+    // }
+    // Base Cost of Accrual Sync is 65936.36842105264
+    // Each user scales cost of accrual sync by ~38393.63157894737
+    // Accrual can be calculated in blocks of 206.65051221488213 users per call
 
     // TODO: Consider making this nonreentrant in case staking/withdrawing causes undefined behavior during this operation
     /// @notice Update the accrual for some chunk of users
@@ -171,11 +235,12 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         if (_chunkSize > totalUsersLocked) _chunkSize = totalUsersLocked; // don't update any users more than once
         if (_chunkSize == 0) _chunkSize = totalUsersLocked; // if 0 was passed in, try to update all users
 
+        uint256 index = LastUserIndexUpdated;
         for (uint256 i = 0; i < _chunkSize; i++) {
-            _updateUsersAccrual(Users[LastUserIndexUpdated]);
-            LastUserIndexUpdated += 1;
-            LastUserIndexUpdated %= totalUsersLocked;
+            index = (index + 1) % totalUsersLocked;
+            _updateUsersAccrual(Users[index]);
         }
+        LastUserIndexUpdated = index;
     }
 
     /// @notice Update the accrual for all users

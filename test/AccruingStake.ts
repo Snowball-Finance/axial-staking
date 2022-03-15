@@ -228,6 +228,7 @@ describe("AccruingStake", () => {
   })
 
   it.only("Estimating gas", async() => {
+    const gasLimit : number = 8000000
     let accounts: Signer[] = await ethers.getSigners()
     let costs: number[] = []
     let average: number = 0
@@ -251,6 +252,10 @@ describe("AccruingStake", () => {
     let baseCost = costs[0] - average
     console.log("Base Cost of Accrual Sync is %d", baseCost)
     console.log("Each user scales cost of accrual sync by ~%d", average)
+
+    let maxUsersPerBlock = (gasLimit - baseCost) / average
+
+    console.log("Accrual can be calculated in blocks of %d users per call", maxUsersPerBlock)
 
     // TODO: Determine maximum numUsers
     // Where baseCost + average*numUsers < block limit
