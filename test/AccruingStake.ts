@@ -14,6 +14,27 @@ async function increaseTimestamp(amount: number) {
   await ethers.provider.send('evm_mine', []);
 }
 
+async function getCostOfAVAXPerGas() {
+    let etherscanProvider = await new ethers.providers.JsonRpcProvider("https://api.avax.network/ext/bc/C/rpc")
+    return (await etherscanProvider.getGasPrice()).toNumber() * 1/1e18
+}
+
+async function gasCostToBlockLimit(gasCost: number) {
+    const gasLimit : number = 8000000 // AVAX Gas Limit is set to 8m Gas Cost
+    return gasLimit / gasCost
+}
+
+async function gasCostToAvax(gasCost:number) {
+    let etherscanProvider = await new ethers.providers.JsonRpcProvider("https://api.avax.network/ext/bc/C/rpc")
+    let nAVAXPerGas1e18 = (await etherscanProvider.getGasPrice()).toNumber()
+    return gasCost * nAVAXPerGas1e18 * 1/1e18;
+}
+
+async function gasCostToUSD(gasCost:number, USDPerAVAX:number) {
+    let avaxCost = await gasCostToAvax(gasCost)
+    return avaxCost * USDPerAVAX
+}
+
 describe("AccruingStake", () => {
   let deployer: Signer
   let governance: Signer
@@ -69,10 +90,9 @@ describe("AccruingStake", () => {
     await stakingAc.connect(alice).stake(10)
     await increaseTimestamp(SECONDS_IN_A_YEAR)
 
-    await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
     console.log("Accrued %d points", accrued)
-    expect(accrued).to.eq(10 * (SECONDS_IN_A_YEAR + 1))
+    expect(accrued).to.eq(10 * (SECONDS_IN_A_YEAR))
   })
 
   it("Claiming repeatedly does not affect a different users funds, or allow user to claim more than they are owed", async () => {
@@ -83,7 +103,6 @@ describe("AccruingStake", () => {
     await stakingAc.connect(bob).stake(100)
 
     await increaseTimestamp(SECONDS_IN_A_YEAR)
-    await stakingAc.connect(alice).updateAllUsersAccrual(0)
 
     await stakingAc.connect(alice).withdrawMyFunds()
     const inWallet = await axialToken.balanceOf(aliceAddr)
@@ -117,7 +136,6 @@ describe("AccruingStake", () => {
         }
     
         await increaseTimestamp(SECONDS_IN_A_WEEK);
-        await stakingAc.connect(alice).updateAllUsersAccrual(0);
     
         let staked = await stakingAc.connect(alice).getStaked(aliceAddr);
         let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr);
@@ -131,7 +149,6 @@ describe("AccruingStake", () => {
     await axialToken.connect(alice).approve(stakingAc.address, 10)
     await stakingAc.connect(alice).stake(10)
     await increaseTimestamp(SECONDS_IN_A_YEAR/2)
-    await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
     await stakingAc.connect(alice).withdrawMyFunds()
     await increaseTimestamp(SECONDS_IN_A_YEAR)
@@ -139,7 +156,6 @@ describe("AccruingStake", () => {
     await axialToken.connect(alice).approve(stakingAc.address, 10)
     await stakingAc.connect(alice).stake(10)
     await increaseTimestamp(SECONDS_IN_A_YEAR/2)
-    await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accruedAgain = await stakingAc.connect(alice).getAccrued(aliceAddr)
     await stakingAc.connect(alice).withdrawMyFunds()
 
@@ -153,9 +169,9 @@ describe("AccruingStake", () => {
 
   it("Accrual cannot be manipulated by sync rate", async () => {
     await axialToken.connect(alice).approve(stakingAc.address, 10)
+    await axialToken.connect(bob).approve(stakingAc.address, 100)
     await stakingAc.connect(alice).stake(10)
     await increaseTimestamp(SECONDS_IN_A_YEAR)
-    await stakingAc.connect(alice).updateAllUsersAccrual(0)
     let accrued = await stakingAc.connect(alice).getAccrued(aliceAddr)
 
     await stakingAc.connect(alice).withdrawMyFunds()
@@ -165,7 +181,7 @@ describe("AccruingStake", () => {
     await stakingAc.connect(alice).stake(10)
     for (let i = 0; i < 52; i++ ) {
         await increaseTimestamp(SECONDS_IN_A_WEEK)
-        await stakingAc.connect(alice).updateAllUsersAccrual(0)
+        await stakingAc.connect(bob).stake(1)
     }
     let accruedAgain = await stakingAc.connect(alice).getAccrued(aliceAddr)
     //await increaseTimestamp(SECONDS_IN_A_YEAR/2)
@@ -227,38 +243,49 @@ describe("AccruingStake", () => {
     expect(users.length).to.eq(2)
   })
 
-  it.only("Estimating gas", async() => {
-    const gasLimit : number = 8000000
+  it("Estimating gas", async() => {
+    let AVAXPerGas = await getCostOfAVAXPerGas() 
+    const USDPerAVAX : number = 73.74 // Cost of 1 AVAX in USD
+
     let accounts: Signer[] = await ethers.getSigners()
     let costs: number[] = []
     let average: number = 0
 
     for (let i = 0; i < accounts.length; ++i) {
         let addr = await accounts[i].getAddress()
-        let previousGasCost = (await stakingAc.estimateGas.updateAllUsersAccrual(0)).toNumber()
+        let previousGasCost = (await stakingAc.estimateGas.getAccrued(addr)).toNumber()
         await axialToken.connect(deployer).mints([ addr ], [10])
         await axialToken.connect(accounts[i]).approve(stakingAc.address, 10)
         await stakingAc.connect(accounts[i]).stake(10)
         await increaseTimestamp(SECONDS_IN_A_DAY)
-        let gasCost = (await stakingAc.estimateGas.updateAllUsersAccrual(0)).toNumber()
-        await stakingAc.connect(deployer).updateAllUsersAccrual(0)
+        let gasCost = (await stakingAc.estimateGas.getAccrued(addr)).toNumber()
         let costDifference = gasCost - previousGasCost
         //console.log("%s: %d - %d = %d", addr, gasCost, previousGasCost, costDifference)
         costs.push(gasCost)
         average += costDifference
     }
 
-    average /= (accounts.length) - 1
+    average /= (accounts.length)
     let baseCost = costs[0] - average
-    console.log("Base Cost of Accrual Sync is %d", baseCost)
-    console.log("Each user scales cost of accrual sync by ~%d", average)
+    //console.log("Base Cost of Accrual Sync is %d", baseCost.toFixed(0))
+    //console.log("Each user scales cost of accrual sync by ~%d", average.toFixed(0))
 
-    let maxUsersPerBlock = (gasLimit - baseCost) / average
+    let maxUsersPerBlock = (8000000 - baseCost) / average
+    //let maxUsersPerBlock = await gasCostToBlockLimit(average)
+    //let maxUsersPerBlock = await gasCostToBlockLimit(total / 10)
 
-    console.log("Accrual can be calculated in blocks of %d users per call", maxUsersPerBlock)
+    console.log("Accrual can be calculated in chunks of up to %d users per call", maxUsersPerBlock.toFixed(0))
 
-    // TODO: Determine maximum numUsers
-    // Where baseCost + average*numUsers < block limit
+    let baseCostInAVAX = baseCost * AVAXPerGas
+    let perUserCostInAVAX = average * AVAXPerGas
+
+    let syncCostPerBlockInAVAX = baseCostInAVAX + (perUserCostInAVAX * maxUsersPerBlock)
+    let baseCostInUSD = baseCostInAVAX * USDPerAVAX
+    let perUserCostInUSD = perUserCostInAVAX * USDPerAVAX
+    let syncCostPerBlockInUSD = syncCostPerBlockInAVAX * USDPerAVAX
+    console.log("Each user costs 1/%d AVAX or $%d per Sync", (1/perUserCostInAVAX).toFixed(0), perUserCostInUSD.toFixed(2))
+    console.log("Sync base cost is 1/%d AVAX or $%d", (1/baseCostInAVAX).toFixed(0), baseCostInUSD.toFixed(2))
+    console.log("Syncing %d users costs 1/%d AVAX or $%d", maxUsersPerBlock.toFixed(0), (1/syncCostPerBlockInAVAX).toFixed(0), syncCostPerBlockInUSD.toFixed(2))
   })
 
 })
