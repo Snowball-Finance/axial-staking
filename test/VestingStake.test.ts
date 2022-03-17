@@ -1,3 +1,4 @@
+/* eslint-disable node/no-missing-import */
 import { solidity } from "ethereum-waffle";
 import { VestingStake, ERC20TokenMock } from "../typechain";
 import chai from "chai";
@@ -185,8 +186,6 @@ describe("VestingStake", () => {
 
     await increaseTimestamp(SECONDS_IN_A_YEAR);
 
-    const balance = await stakingVe.getBalance(aliceAddr);
-
     await stakingVe.connect(alice).claimMyFunds();
     const inWallet = await axialToken.balanceOf(aliceAddr);
     await stakingVe.connect(alice).claimMyFunds();
@@ -241,7 +240,7 @@ describe("VestingStake", () => {
       expect(balance.add(inWallet)).to.eq(100);
 
       // In 26 weeks, extend our lock by another year
-      if (i == 26) {
+      if (i === 26) {
         console.log("Extending lock by one year");
         await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 0, false);
       }
@@ -258,7 +257,7 @@ describe("VestingStake", () => {
     let balance = await stakingVe.connect(alice).getBalance(aliceAddr);
     let power = await stakingVe.connect(alice).getPower(aliceAddr);
     let inWallet = await axialToken.balanceOf(aliceAddr);
-    let deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
+    const deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
     console.log(
       "Day %d, Balance: %d Power: %d, Wallet: %d, Deferred: %d",
       0,
@@ -273,7 +272,7 @@ describe("VestingStake", () => {
       balance = await stakingVe.connect(alice).getBalance(aliceAddr);
       power = await stakingVe.connect(alice).getPower(aliceAddr);
       inWallet = await axialToken.balanceOf(aliceAddr);
-      let deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
+      const deferred = await stakingVe.connect(alice).getUnclaimed(aliceAddr);
       console.log(
         "Day %d, Balance: %d Power: %d, Wallet: %d, Deferred: %d",
         i,
@@ -285,7 +284,7 @@ describe("VestingStake", () => {
       expect(balance.add(inWallet).add(deferred)).to.eq(100);
 
       // In 26 weeks, extend our lock by another year
-      if (i == 26) {
+      if (i === 26) {
         console.log("Extending lock by one year");
         await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 0, true);
       }
@@ -307,7 +306,7 @@ describe("VestingStake", () => {
 
       await axialToken.connect(deployer).mints([aliceAddr], [interest]);
 
-      let dividends = await axialToken.balanceOf(aliceAddr);
+      const dividends = await axialToken.balanceOf(aliceAddr);
       await axialToken.connect(alice).approve(stakingVe.address, dividends);
       await stakingVe.connect(alice).stake(SECONDS_IN_A_DAY, dividends, false);
 
@@ -332,12 +331,12 @@ describe("VestingStake", () => {
     await increaseTimestamp(SECONDS_IN_A_YEAR / 2);
 
     for (let i = 0; i < 256; ++i) {
-      let extension = 2 ** i;
+      const extension = 2 ** i;
 
-      let lockBeforeExtension = await stakingVe
+      const lockBeforeExtension = await stakingVe
         .connect(alice)
         .getLock(aliceAddr);
-      let duration =
+      const duration =
         lockBeforeExtension.EndBlockTime.toNumber() -
         lockBeforeExtension.StartBlockTime.toNumber();
       if (duration + extension > SECONDS_IN_A_YEAR * 2) {
@@ -345,17 +344,17 @@ describe("VestingStake", () => {
           .reverted;
       } else {
         await stakingVe.connect(alice).stake(extension, 0, false);
-        let lockAfterExtension = await stakingVe
+        const lockAfterExtension = await stakingVe
           .connect(alice)
           .getLock(aliceAddr);
         expect(
           lockAfterExtension.EndBlockTime.toNumber()
         ).to.be.greaterThanOrEqual(lockBeforeExtension.EndBlockTime.toNumber());
-        let years =
+        const years =
           (lockAfterExtension.EndBlockTime.toNumber() -
             lockAfterExtension.StartBlockTime.toNumber()) /
           (SECONDS_IN_A_YEAR * 2);
-        //console.log("Lock may be for %d years", years)
+        // console.log("Lock may be for %d years", years)
       }
     }
   });
@@ -383,8 +382,8 @@ describe("VestingStake", () => {
     await axialToken.connect(alice).approve(stakingVe.address, 10);
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR, 10, false);
 
-    let balance = await stakingVe.connect(alice).getBalance(aliceAddr);
-    let power = await stakingVe.connect(alice).getPower(aliceAddr);
+    const balance = await stakingVe.connect(alice).getBalance(aliceAddr);
+    const power = await stakingVe.connect(alice).getPower(aliceAddr);
     inWallet = await axialToken.balanceOf(aliceAddr);
     console.log("Balance: %d Power: %d, Wallet: %d", balance, power, inWallet);
     expect(await stakingVe.connect(alice).getPower(aliceAddr)).to.eq(5);
@@ -400,10 +399,10 @@ describe("VestingStake", () => {
         .ownerRemoveNonDepositToken(axialToken.address)
     ).to.be.revertedWith("!invalid");
 
-    let axialTokenOwnedByStaking = await axialToken.balanceOf(
+    const axialTokenOwnedByStaking = await axialToken.balanceOf(
       stakingVe.address
     );
-    let axialTokenOwnedByGovernance = await axialToken.balanceOf(
+    const axialTokenOwnedByGovernance = await axialToken.balanceOf(
       governanceAddr
     );
     expect(axialTokenOwnedByStaking).to.eq(10);
@@ -411,8 +410,8 @@ describe("VestingStake", () => {
   });
 
   it("Governance can withdraw tokens other than the staked one", async () => {
-    let stakingVeAddr = stakingVe.address;
-    let coaxialToken: ERC20TokenMock = await (
+    const stakingVeAddr = stakingVe.address;
+    const coaxialToken: ERC20TokenMock = await (
       await ethers.getContractFactory("ERC20TokenMock")
     ).deploy("Coaxial", "COAX");
     await coaxialToken.connect(deployer).mints([aliceAddr], [1000]);
@@ -426,7 +425,9 @@ describe("VestingStake", () => {
       .connect(governance)
       .ownerRemoveNonDepositToken(coaxialToken.address);
     coaxialOwnedByStaking = await coaxialToken.balanceOf(stakingVeAddr);
-    let coaxialOwnedByGovernance = await coaxialToken.balanceOf(governanceAddr);
+    const coaxialOwnedByGovernance = await coaxialToken.balanceOf(
+      governanceAddr
+    );
     expect(coaxialOwnedByStaking).to.eq(0);
     expect(coaxialOwnedByGovernance).to.eq(1000);
   });
@@ -442,9 +443,9 @@ describe("VestingStake", () => {
 
     await increaseTimestamp(SECONDS_IN_A_YEAR + 1);
 
-    let users = await stakingVe.connect(alice).getAllUsers();
+    const users = await stakingVe.connect(alice).getAllUsers();
 
-    //console.log("Users: ", users)
+    // console.log("Users: ", users)
 
     expect(users.length).to.eq(3);
   });

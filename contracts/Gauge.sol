@@ -21,20 +21,13 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     IERC20 public constant AXIAL =
         IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
 
-    /// @notice token for voting on Axial distribution to pools - SAXIAL
-    StakedAxialToken public constant SAXIAL =
-        StakedAxialToken(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: get actual address
-
     /// @notice token to allow boosting rewards - VEAXIAL
-    IERC20 public constant VEAXIAL =
-        IERC20(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: get actual address
+    // TODO: Should be replaced with actual type (AccruingStake) when code is complete.
+    // Temporarily set as IERC20 to allow testing
+    IERC20 public immutable VEAXIAL;
 
     /// @notice token to be staked in return for rewards
     IERC20 public immutable poolToken;
-
-    /// TODO: Not used. Remove?
-    IERC20 public constant TREASURY =
-        IERC20(0x4980AD7cCB304f7d3c5053Aa1131eD1EDaf48809);
 
     // ==================== Events ==================== //
 
@@ -43,12 +36,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     event RewardPaid(address indexed user, uint256 reward, address token);
     event RewardAdded(uint256 reward, address token);
 
+    // ==================== State Variables ==================== //
+
+    /// @dev tokens to be distributed as a reward to stakers
     address[] public rewardTokens;
-    address public distribution;
+    /// @dev contract responsible for distributing rewards (should be Gauge Proxy)
+    address public distribution; //TODO: Maybe rename to gaugeProxy?
     uint256 public constant DURATION = 7 days;
 
     uint256 public periodFinish = 0;
-    mapping(address => uint256) public rewardRates; // token => rate
+    /// @dev token => rate
+    mapping(address => uint256) public rewardRates;
     mapping(address => uint256) public rewardPerTokenStored;
 
     uint256 public lastUpdateTime;
@@ -93,14 +91,21 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         _;
     }
 
-    constructor(address _token, address _governance) {
+    constructor(
+        address _token,
+        address _governance,
+        address _veaxial
+    ) {
         poolToken = IERC20(_token);
         distribution = msg.sender;
         governance = _governance;
+        VEAXIAL = IERC20(_veaxial);
     }
 
+    // ==================== Reward Token Logic ==================== //
+
+    /// @notice adding a reward token to our array
     /// @param tokenAddress Reward token to be added to our rewardTokens array
-    // adding a reward token to our array
     function addRewardToken(address tokenAddress)
         public
         onlyGovernance
@@ -111,33 +116,13 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         rewardRates[tokenAddress] = 0;
     }
 
-    // returns the amount of reward tokens for the gauges
+    /// @notice returns the amount of reward tokens for the gauges
     function getNumRewardTokens() public view returns (uint256) {
         return rewardTokens.length;
     }
 
-    // This function is to allow us to update the gaugeProxy without resetting the old gauges.
-    // this changes where it is receiving the axial tokens, as well as changes the governance
-    function changeDistribution(address _distribution) external onlyGovernance {
-        distribution = _distribution;
-    }
-
-    // total supply of our lp tokens in the gauge (e.g. AC4D tokens present)
-    function totalSupply() external view returns (uint256) {
-        return _totalSupply;
-    }
-
-    // balance of lp tokens that user has in the gauge (e.g. amount of AC4D a user has)
-    function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
-    }
-
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return Math.min(block.timestamp, periodFinish);
-    }
-
-    // how many of our reward tokens is the user receiving per lp token
-    // (e.g. how many teddy or axial is received per AC4D token)
+    /// @notice return how many of our reward tokens is the user receiving per lp token
+    /// @dev (e.g. how many teddy or axial is received per AC4D token)
     function rewardPerToken(uint256 tokenIndex) public view returns (uint256) {
         if (_totalSupply == 0) {
             return rewardPerTokenStored[rewardTokens[tokenIndex]];
@@ -152,25 +137,16 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
             );
     }
 
-    function derivedBalance(address account) public view returns (uint256) {
-        uint256 _balance = _balances[account];
-        uint256 _derived = _balance.mul(40).div(100);
-        uint256 _adjusted = (
-            _totalSupply.mul(SNOWCONE.balanceOf(account)).div(
-                SNOWCONE.totalSupply()
-            )
-        ).mul(60).div(100);
-        return _derived.add(_adjusted);
+    /// @notice getting the reward to be received for each reward's respective staking period
+    function getRewardForDuration(uint256 tokenIndex)
+        external
+        view
+        returns (uint256)
+    {
+        return rewardRates[rewardTokens[tokenIndex]].mul(DURATION);
     }
 
-    function kick(address account) public {
-        uint256 _derivedBalance = derivedBalances[account];
-        derivedSupply = derivedSupply.sub(_derivedBalance);
-        _derivedBalance = derivedBalance(account);
-        derivedBalances[account] = _derivedBalance;
-        derivedSupply = derivedSupply.add(_derivedBalance);
-    }
-
+    /// @notice gets the amount of reward tokens that the user has earned
     function earned(address account, uint256 tokenIndex)
         public
         view
@@ -189,15 +165,54 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
                 .add(rewards[account][rewardTokens[tokenIndex]]);
     }
 
-    // getting the reward to be received for each reward's respective staking period
-    function getRewardForDuration(uint256 tokenIndex)
-        external
-        view
-        returns (uint256)
-    {
-        return rewardRates[rewardTokens[tokenIndex]].mul(DURATION);
+    /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
+    /// @dev this changes where it is receiving the axial tokens, as well as changes the governance
+    function changeDistribution(address _distribution) external onlyGovernance {
+        distribution = _distribution;
     }
 
+    /// @notice total supply of our lp tokens in the gauge (e.g. AC4D tokens present)
+    function totalSupply() external view returns (uint256) {
+        return _totalSupply;
+    }
+
+    /// @notice balance of lp tokens that user has in the gauge (e.g. amount of AC4D a user has)
+    function balanceOf(address account) external view returns (uint256) {
+        return _balances[account];
+    }
+
+    function lastTimeRewardApplicable() public view returns (uint256) {
+        return Math.min(block.timestamp, periodFinish);
+    }
+
+    /// @notice returns boost factor for specified account
+    function derivedBalance(address account) public view returns (uint256) {
+        uint256 _userBalanceInGauge = _balances[account];
+
+        // TODO: Uncomment when VEAxial is complete, confirm functions are correct
+        // uint256 usersVeAxialBalance = VEAXIAL.getAccrued(account); // get the veAxial balance of the account
+        // uint256 totalVeAxial = VEAXIAL.getTotalAccrued(); // get the total veAxial
+
+        // TODO: Remove when veAxial is complete
+        uint256 usersVeAxialBalance = VEAXIAL.balanceOf(account);
+        uint256 totalVeAxial = VEAXIAL.totalSupply();
+
+        uint256 _adjusted = (
+            _totalSupply.mul(usersVeAxialBalance).div(totalVeAxial)
+        );
+
+        return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
+    }
+
+    function kick(address account) public {
+        uint256 _derivedBalance = derivedBalances[account];
+        derivedSupply = derivedSupply.sub(_derivedBalance);
+        _derivedBalance = derivedBalance(account);
+        derivedBalances[account] = _derivedBalance;
+        derivedSupply = derivedSupply.add(_derivedBalance);
+    }
+
+    /// @notice internal deposit function
     function _deposit(uint256 amount, address account)
         internal
         nonReentrant
@@ -207,21 +222,27 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         _totalSupply = _totalSupply.add(amount);
         _balances[account] = _balances[account].add(amount);
         emit Staked(account, amount);
-        token.safeTransferFrom(account, address(this), amount);
+        poolToken.safeTransferFrom(account, address(this), amount);
     }
 
+    /// @notice deposits all pool tokens to the gauge
     function depositAll() external {
-        _deposit(token.balanceOf(msg.sender), msg.sender);
+        _deposit(poolToken.balanceOf(msg.sender), msg.sender);
     }
 
+    /// @notice deposits specified amount of tokens into the gauge from msg.sender
     function deposit(uint256 amount) external {
         _deposit(amount, msg.sender);
     }
 
+    /// @notice deposit specified amount of tokens into the gauge on behalf of specified account
+    /// @param amount amount of tokens to be deposited
+    /// @param account account to depoit from
     function depositFor(uint256 amount, address account) external {
         _deposit(amount, account);
     }
 
+    /// @notice internal withdraw function
     function _withdraw(uint256 amount)
         internal
         nonReentrant
@@ -230,18 +251,21 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         require(amount > 0, "Cannot withdraw 0");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        token.safeTransfer(msg.sender, amount);
+        poolToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
+    /// @notice withdraws all pool tokens from the gauge
     function withdrawAll() external {
         _withdraw(_balances[msg.sender]);
     }
 
+    /// @notice withdraw specified amount of tokens from the message senders balance
     function withdraw(uint256 amount) external {
         _withdraw(amount);
     }
 
+    /// @notice transfer
     function getReward(uint256 tokenIndex)
         public
         nonReentrant

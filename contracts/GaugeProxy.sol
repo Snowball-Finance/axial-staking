@@ -1,6 +1,8 @@
 /// SPDX-License-Identifier: MIT
 pragma solidity 0.8.9;
 
+import {IVeAxial} from "./interfaces/IVeAxial.sol"; // TODO: Should be replaced with actual contract before PR
+
 import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
 import {Strategist} from "./libraries/Strategist.sol";
 import {StakedAxialToken} from "./StakedAxialToken.sol";
@@ -19,28 +21,27 @@ contract GaugeProxy is ProtocolGovernance {
 
     // ==================== External Dependencies ==================== //
 
-    /// @notice the Axial token contraxt
-    IERC20 public constant AXIAL =
-        IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
-
     /// @notice Master Chef Axial V3 contract
     IMasterChefAxialV3 public constant MCAV3 =
         IMasterChefAxialV3(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3);
 
     /// @notice token for voting on Axial distribution to pools - SAXIAL
-    StakedAxialToken public constant SAXIAL =
-        StakedAxialToken(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: set actual address before PR & delete comment
+    StakedAxialToken public immutable sAxial;
 
-    /// @notice token to allow boosting rewards - VEAXIAL
-    IERC20 public constant VEAXIAL =
-        IERC20(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3); // TODO: set actual address before PR & delete comment
+    /// @notice the Axial token contraxt
+    IERC20 public immutable Axial;
 
     /// @notice dummy token required for masterchef deposits and withdrawals
     IERC20 public immutable axialDummyToken;
 
+    /// @notice token to allow boosting rewards - VEAXIAL
+    // TODO: Should be replaced with actual type (AccruingStake) when code is complete.
+    // Temporarily set as IERC20 to allow testing
+    IERC20 public immutable veAxial;
+
     // ==================== Token Voting Storage ==================== //
 
-    /// @notice max time allowed from lock time to distribution time (6 hours)
+    /// @notice max time allowed to pass before distribution (6 hours)
     uint256 public constant DISTRIBUTION_DEADLINE = 21600;
 
     uint256 public pid;
@@ -67,8 +68,16 @@ contract GaugeProxy is ProtocolGovernance {
     mapping(address => uint256) public usedWeights;
     mapping(address => bool) public deployers;
 
-    constructor(address _governance) {
+    constructor(
+        address _governance,
+        address _axial,
+        address _saxial,
+        address _veaxial
+    ) {
         governance = _governance;
+        Axial = IERC20(_axial);
+        sAxial = StakedAxialToken(_saxial);
+        veAxial = IERC20(_veaxial);
         axialDummyToken = new AxialDummyToken();
     }
 
@@ -89,10 +98,7 @@ contract GaugeProxy is ProtocolGovernance {
 
     /// @notice modifier to restrict functinos to governance or strategist roles
     modifier onlyBenevolent() {
-        require(
-            msg.sender == strategist || msg.sender == governance,
-            "unauthorized sender"
-        );
+        require(msg.sender == governance, "unauthorized sender");
         _;
     }
 
@@ -103,7 +109,7 @@ contract GaugeProxy is ProtocolGovernance {
         return _tokens;
     }
 
-    /// @notice returns the gauge for the specified token
+    /// @notice returns the gauge for the specifi(AccruingStake)
     function getGauge(address _token) external view returns (address) {
         return gauges[_token];
     }
@@ -137,7 +143,7 @@ contract GaugeProxy is ProtocolGovernance {
         // reset votes of the owner
         _reset(_owner);
         uint256 _tokenCnt = _tokenVote.length;
-        uint256 _weight = SAXIAL.getPower(_owner);
+        uint256 _weight = sAxial.getPower(_owner);
         uint256 _totalVoteWeight = 0;
         uint256 _usedWeight = 0;
 
@@ -161,7 +167,6 @@ contract GaugeProxy is ProtocolGovernance {
                 votes[_owner][_token] = _tokenWeight;
             }
         }
-        // This may be redundant as it simply represents the users total xSnob balance if they have ever voted
         usedWeights[_owner] = _usedWeight;
     }
 
@@ -213,7 +218,9 @@ contract GaugeProxy is ProtocolGovernance {
     /// @notice Add new token gauge
     function addGauge(address _token) external onlyBenevolent {
         require(gauges[_token] == address(0x0), "exists");
-        gauges[_token] = address(new Gauge(_token, governance));
+        gauges[_token] = address(
+            new Gauge(_token, governance, address(veAxial))
+        );
         _tokens.push(_token);
     }
 
@@ -280,7 +287,7 @@ contract GaugeProxy is ProtocolGovernance {
             lockedWeights[_tokens[i]] = weights[_tokens[i]];
         }
         collect();
-        lockedBalance = AXIAL.balanceOf(address(this));
+        lockedBalance = Axial.balanceOf(address(this));
         locktime = block.timestamp;
     }
 
@@ -304,8 +311,8 @@ contract GaugeProxy is ProtocolGovernance {
                     totalWeight
                 );
                 if (_reward > 0) {
-                    AXIAL.safeApprove(_gauge, 0);
-                    AXIAL.safeApprove(_gauge, _reward);
+                    Axial.safeApprove(_gauge, 0);
+                    Axial.safeApprove(_gauge, _reward);
                     Gauge(_gauge).notifyRewardAmount(_reward);
                 }
             }
