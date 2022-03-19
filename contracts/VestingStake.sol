@@ -59,6 +59,23 @@ contract VestingStake is ReentrancyGuard, Ownable {
         Symbol = _symbol;
     }
 
+    /// @notice Emitted when a user stakes for the first time
+    /// @param user Address of the user who staked
+    /// @param amount Quantity of tokens staked
+    /// @param duration Length in seconds of stake
+    event userStaked(address indexed user, uint256 amount, uint256 duration);
+
+    /// @notice Emitted when a user extends and/or deposits into their existing stake
+    /// @param user Address of the user who staked
+    /// @param amount New total quantity of tokens in stake
+    /// @param duration New total length of stake
+    event userExtended(address indexed user, uint256 amount, uint256 duration);
+
+    /// @notice Emitted when a user claims outstanding vested balance
+    /// @param user Address of the user who claimed
+    /// @param amount Quantity of tokens claimed
+    event userClaimed(address indexed user, uint256 amount);
+
     /// @notice Calculate the number of vested tokens a user has not claimed
     /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
     /// @return Quantity of tokens which have vested but are unclaimed by the specified user
@@ -151,6 +168,8 @@ contract VestingStake is ReentrancyGuard, Ownable {
 
         LockedFunds[userAddr] = currentBalance;
         DeferredFunds[userAddr] = 0;
+
+        emit userClaimed(userAddr, fundsToClaim);
     }
 
     /// @notice Create/extend the duration of the invoking users lock and/or deposit additional tokens into it
@@ -187,6 +206,7 @@ contract VestingStake is ReentrancyGuard, Ownable {
             fundsUnclaimed += DeferredFunds[userAddr];
             IERC20(StakedToken).safeTransfer(userAddr, fundsUnclaimed);
             DeferredFunds[userAddr] = 0;
+            emit userClaimed(userAddr, fundsUnclaimed);
         } else {
             DeferredFunds[userAddr] += fundsUnclaimed;
         }
@@ -202,5 +222,12 @@ contract VestingStake is ReentrancyGuard, Ownable {
         newLock.StartingAmountLocked = newTotalDeposit;
         newLock.Initialized = true;
         Locks[userAddr] = newLock;
+
+        // Events
+        if (oldDurationRemaining == 0) {
+            emit userStaked(userAddr, newTotalDeposit, newLock.EndBlockTime - newLock.StartBlockTime);
+        } else {
+            emit userExtended(userAddr, newTotalDeposit, newLock.EndBlockTime - newLock.StartBlockTime);
+        }
     }
 }

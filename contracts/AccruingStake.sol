@@ -57,6 +57,22 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         Symbol = _symbol;
     }
 
+    /// @notice Emitted when a user creates a new stake
+    /// @param user Address of the user who staked
+    /// @param amount Quantity of tokens deposited
+    event userStaked(address indexed user, uint256 amount);
+
+    /// @notice Emitted when a user adds to their stake
+    /// @param user Address of the user who staked
+    /// @param amount Quantity of tokens deposited
+    event userRestaked(address indexed user, uint256 amount);
+
+    /// @notice Emitted when a user withdraws their funds
+    /// @param user Address of the user who withdrew
+    /// @param amount Quantity of tokens withdrawn
+    /// @param accrued Quantity of accrued tokens lost
+    event userWithdrew(address indexed user, uint256 amount, uint256 accrued);
+
     /// @notice Get the number of tokens a user currently has staked
     /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
     /// @return Quantity of tokens which a user currently has staked
@@ -137,6 +153,9 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         TotalTokensLocked -= fundsToClaim;
         TotalTockensAccrued -= Locks[userAddr].AccruedTokens;
 
+        // Broadcast withdrawal
+        emit userWithdrew(userAddr, fundsToClaim, Locks[userAddr].AccruedTokens);
+
         Locks[userAddr].StakedTokens = 0;
         Locks[userAddr].AccruedTokens = 0;
         //Locks[userAddr].TimeStamp = 0;
@@ -170,8 +189,10 @@ contract AccruingStake is ReentrancyGuard, Ownable {
             Locks[userAddr].Initialized = true;
             Locks[userAddr].TimeStamp = block.timestamp; // begin accrual from time of initial deposit
             Locks[userAddr].UserIndex = Users.length - 1;
+            emit userStaked(userAddr, _amount);
         } else {
             _updateUsersAccrual(userAddr); // balance ledger before accrual rate is increased
+            emit userRestaked(userAddr, _amount);
         }
 
         // Update balance
