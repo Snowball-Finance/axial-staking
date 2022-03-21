@@ -1,8 +1,6 @@
 /// SPDX-License-Identifier: MIT
 pragma solidity 0.8.9;
 
-import {IVeAxial} from "./interfaces/IVeAxial.sol"; // TODO: Should be replaced with actual contract before PR
-
 import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
 import {Strategist} from "./libraries/Strategist.sol";
 import {StakedAxialToken} from "./StakedAxialToken.sol";
