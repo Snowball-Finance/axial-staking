@@ -89,8 +89,8 @@ describe("VestingStake", () => {
     await axialToken.connect(alice).approve(stakingVe.address, "10")
     await stakingVe.connect(alice).stake(lock_duration, "10", false)
     const lock = await stakingVe.connect(alice).getLock(aliceAddr)
-    expect(lock.StartingAmountLocked).to.eq(10)
-    expect(lock.EndBlockTime.sub(lock.StartBlockTime)).to.eq(lock_duration)
+    expect(lock.startingAmountLocked).to.eq(10)
+    expect(lock.endBlockTime.sub(lock.startBlockTime)).to.eq(lock_duration)
     expect(await axialToken.balanceOf(aliceAddr)).to.eq(0)
     expect(await axialToken.balanceOf(stakingVe.address)).to.eq(10)
   })
@@ -108,12 +108,12 @@ describe("VestingStake", () => {
     const bob_lock = await stakingVe.connect(bob).getLock(bobAddr)
     const carol_lock = await stakingVe.connect(carol).getLock(carolAddr)
 
-    expect(alice_lock.StartingAmountLocked).to.eq(10)
-    expect(alice_lock.EndBlockTime.sub(alice_lock.StartBlockTime)).to.eq( SECONDS_IN_A_YEAR)
-    expect(bob_lock.StartingAmountLocked).to.eq(100)
-    expect(bob_lock.EndBlockTime.sub(bob_lock.StartBlockTime)).to.eq(SECONDS_IN_A_YEAR)
-    expect(carol_lock.StartingAmountLocked).to.eq(500)
-    expect(carol_lock.EndBlockTime.sub(carol_lock.StartBlockTime)).to.eq(SECONDS_IN_A_YEAR)
+    expect(alice_lock.startingAmountLocked).to.eq(10)
+    expect(alice_lock.endBlockTime.sub(alice_lock.startBlockTime)).to.eq(SECONDS_IN_A_YEAR)
+    expect(bob_lock.startingAmountLocked).to.eq(100)
+    expect(bob_lock.endBlockTime.sub(bob_lock.startBlockTime)).to.eq(SECONDS_IN_A_YEAR)
+    expect(carol_lock.startingAmountLocked).to.eq(500)
+    expect(carol_lock.endBlockTime.sub(carol_lock.startBlockTime)).to.eq(SECONDS_IN_A_YEAR)
 
     expect(await stakingVe.connect(alice).getPower(aliceAddr)).to.eq(4)
     expect(await stakingVe.connect(bob).getPower(bobAddr)).to.eq(49)
@@ -270,14 +270,14 @@ describe("VestingStake", () => {
       let extension = 2 ** i;
 
       let lockBeforeExtension = await(stakingVe.connect(alice).getLock(aliceAddr))
-      let duration = lockBeforeExtension.EndBlockTime.toNumber() - lockBeforeExtension.StartBlockTime.toNumber();
+      let duration = lockBeforeExtension.endBlockTime.toNumber() - lockBeforeExtension.startBlockTime.toNumber();
       if (duration + extension > SECONDS_IN_A_YEAR * 2) {
         await expect(stakingVe.connect(alice).stake(extension, 0, false)).to.be.reverted
       } else {
         await stakingVe.connect(alice).stake(extension, 0, false)
         let lockAfterExtension = await(stakingVe.connect(alice).getLock(aliceAddr))
-        expect(lockAfterExtension.EndBlockTime.toNumber()).to.be.greaterThanOrEqual(lockBeforeExtension.EndBlockTime.toNumber())
-        let years = (lockAfterExtension.EndBlockTime.toNumber() - lockAfterExtension.StartBlockTime.toNumber()) / (SECONDS_IN_A_YEAR * 2)
+        expect(lockAfterExtension.endBlockTime.toNumber()).to.be.greaterThanOrEqual(lockBeforeExtension.endBlockTime.toNumber())
+        let years = (lockAfterExtension.endBlockTime.toNumber() - lockAfterExtension.startBlockTime.toNumber()) / (SECONDS_IN_A_YEAR * 2)
         //console.log("Lock may be for %d years", years)
       }
     }
