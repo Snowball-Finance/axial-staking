@@ -13,8 +13,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-//import "hardhat/console.sol";
-
 contract VestingStake is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
@@ -148,6 +146,8 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @notice Allow owner to reclaim tokens not matching the deposit token
     /// @notice Some users may have accidentally sent these to the contract
     /// @param _token Address of the non-deposit token
+    /// @dev Always ensure the _token is legitimate before calling this
+    /// @dev A bad token can mimic safetransfer or balanceof with a nocive function
     function ownerRemoveNonDepositToken(address _token) public nonReentrant onlyOwner {
         require(_token != stakedToken, "!invalid");
         uint256 balanceOfToken = IERC20(_token).balanceOf(address(this));
