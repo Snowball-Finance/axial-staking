@@ -25,7 +25,7 @@ let bob: SignerWithAddress;
 
 let testTokenAddress: string;
 
-describe("Gauge Proxy Tests", function () {
+describe("Gauge Proxy:", function () {
   beforeEach(async function () {
     await setupTest();
   });

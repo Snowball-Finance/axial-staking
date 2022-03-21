@@ -116,7 +116,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         rewardRates[tokenAddress] = 0;
     }
 
-    /// @notice returns the amount of reward tokens for the gauges
+    /// @notice returns the amount of reward tokens for the gauge
     function getNumRewardTokens() public view returns (uint256) {
         return rewardTokens.length;
     }
@@ -189,7 +189,12 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     function derivedBalance(address account) public view returns (uint256) {
         uint256 _userBalanceInGauge = _balances[account];
 
-        // TODO: Uncomment when VEAxial is complete, confirm functions are correct
+        // If the user has no tokens in the gauge, return 0
+        if (_userBalanceInGauge == 0) {
+            return 0;
+        }
+
+        // TODO: Uncomment when VEAxial is complete & confirm functions are correct
         // uint256 usersVeAxialBalance = VEAXIAL.getAccrued(account); // get the veAxial balance of the account
         // uint256 totalVeAxial = VEAXIAL.getTotalAccrued(); // get the total veAxial
 
@@ -265,7 +270,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         _withdraw(amount);
     }
 
-    /// @notice transfer
+    /// @notice get reward tokens from gauge
     function getReward(uint256 tokenIndex)
         public
         nonReentrant
@@ -279,6 +284,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         }
     }
 
+    /// @notice withdraw deposited pool tokens and claim reward tokens
     function exit() external {
         _withdraw(_balances[msg.sender]);
         for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -324,7 +330,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         emit RewardAdded(reward, rewardTokens[tokenIndex]);
     }
 
-    // only called by the GaugeProxy and so only deals in the native token
+    /// @notice only called by the GaugeProxy and so only deals in the native token
     function notifyRewardAmount(uint256 reward)
         external
         onlyDistribution
