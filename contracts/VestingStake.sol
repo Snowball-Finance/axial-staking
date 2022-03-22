@@ -13,22 +13,20 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-//import "hardhat/console.sol";
-
 contract VestingStake is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // Info pertaining to staking contract
-    address public StakedToken; // An ERC20 Token to be staked (i.e. Axial)
-    string public Name; // New asset after staking (i.e. sAxial)
-    string public Symbol; // New asset symbol after staking (i.e. sAXIAL)
-    uint256 private InterpolationGranularity = 1e18; // Note: ERC20.decimals() is for display and does not affect arithmetic!
+    address public stakedToken; // An ERC20 Token to be staked (i.e. Axial)
+    string public name; // New asset after staking (i.e. sAxial)
+    string public symbol; // New asset symbol after staking (i.e. sAXIAL)
+    uint256 private interpolationGranularity = 1e18; // Note: ERC20.decimals() is for display and does not affect arithmetic!
 
     // Info pertaining to users
-    address[] private Users; // An array containing all user addresses
-    mapping(address => LockVe) private Locks; // A mapping of each users lock
-    mapping(address => uint256) private LockedFunds; // A mapping of each users total deposited funds
-    mapping(address => uint256) private DeferredFunds; // A mapping of vested funds the user wishes to leave unclaimed
+    address[] private users; // An array containing all user addresses
+    mapping(address => LockVe) private locks; // A mapping of each users lock
+    mapping(address => uint256) private lockedFunds; // A mapping of each users total deposited funds
+    mapping(address => uint256) private deferredFunds; // A mapping of vested funds the user wishes to leave unclaimed
 
     // Lock structure, only one of these is allowed per user
     // A DELTA can be derived as the degree of interpolation between the start/end block:
@@ -36,10 +34,10 @@ contract VestingStake is ReentrancyGuard, Ownable {
     // This can be used to determine how much of our staked token is unlocked:
     // currentAmountLocked = startingAmountLocked - (delta * startingAmountLocked)
     struct LockVe {
-        uint256 StartBlockTime;
-        uint256 EndBlockTime;
-        uint256 StartingAmountLocked;
-        bool Initialized;
+        uint256 startBlockTime;
+        uint256 endBlockTime;
+        uint256 startingAmountLocked;
+        bool initialized;
     }
 
     /// @notice Constructor
@@ -54,16 +52,33 @@ contract VestingStake is ReentrancyGuard, Ownable {
         address _governance
     ) {
         transferOwnership(_governance);
-        StakedToken = _stakedToken;
-        Name = _name;
-        Symbol = _symbol;
+        stakedToken = _stakedToken;
+        name = _name;
+        symbol = _symbol;
     }
+
+    /// @notice Emitted when a user stakes for the first time
+    /// @param user Address of the user who staked
+    /// @param amount Quantity of tokens staked
+    /// @param duration Length in seconds of stake
+    event userStaked(address indexed user, uint256 amount, uint256 duration);
+
+    /// @notice Emitted when a user extends and/or deposits into their existing stake
+    /// @param user Address of the user who staked
+    /// @param amount New total quantity of tokens in stake
+    /// @param duration New total length of stake
+    event userExtended(address indexed user, uint256 amount, uint256 duration);
+
+    /// @notice Emitted when a user claims outstanding vested balance
+    /// @param user Address of the user who claimed
+    /// @param amount Quantity of tokens claimed
+    event userClaimed(address indexed user, uint256 amount);
 
     /// @notice Calculate the number of vested tokens a user has not claimed
     /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
     /// @return Quantity of tokens which have vested but are unclaimed by the specified user
     function getUnclaimed(address _userAddr) public view returns (uint256) {
-        uint256 totalFundsDeposited = LockedFunds[_userAddr] + DeferredFunds[_userAddr];
+        uint256 totalFundsDeposited = lockedFunds[_userAddr] + deferredFunds[_userAddr];
         uint256 currentBalance = getBalance(_userAddr);
         uint256 fundsToClaim = totalFundsDeposited - currentBalance;
         return fundsToClaim;
@@ -73,14 +88,14 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @param _userAddr Address of any user to view the number of tokens they still have locked
     /// @return Quantity of tokens the user has locked
     function getBalance(address _userAddr) public view returns (uint256) {
-        LockVe memory usersLock = Locks[_userAddr];
+        LockVe memory usersLock = locks[_userAddr];
 
         uint256 currentTimestamp = block.timestamp;
         uint256 balance = 0;
 
-        if (usersLock.EndBlockTime > currentTimestamp) {
-            uint256 granularDelta = ((usersLock.EndBlockTime - currentTimestamp) * InterpolationGranularity) / (usersLock.EndBlockTime - usersLock.StartBlockTime);
-            balance += (usersLock.StartingAmountLocked * granularDelta) / InterpolationGranularity;
+        if (usersLock.endBlockTime > currentTimestamp) {
+            uint256 granularDelta = ((usersLock.endBlockTime - currentTimestamp) * interpolationGranularity) / (usersLock.endBlockTime - usersLock.startBlockTime);
+            balance += (usersLock.startingAmountLocked * granularDelta) / interpolationGranularity;
         }
         return balance;
     }
@@ -89,18 +104,18 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @param _userAddr Address of any user to view the number of governance tokens currently awarded to them
     /// @return Quantity of governance tokens allocated to the user
     function getPower(address _userAddr) public view returns (uint256) {
-        LockVe memory usersLock = Locks[_userAddr];
+        LockVe memory usersLock = locks[_userAddr];
 
         uint256 currentTimestamp = block.timestamp;
         uint256 power = 0;
 
-        if (usersLock.EndBlockTime > currentTimestamp) {
+        if (usersLock.endBlockTime > currentTimestamp) {
             // let delta = elapsed / totalLocktinme
             // let startingPower = duration / 2 years
             // let power = delta * startingPower
-            uint256 startingAmountAwarded = ((usersLock.EndBlockTime - usersLock.StartBlockTime) * usersLock.StartingAmountLocked) / 104 weeks;
-            uint256 granularDelta = ((usersLock.EndBlockTime - currentTimestamp) * InterpolationGranularity) / (usersLock.EndBlockTime - usersLock.StartBlockTime);
-            power += (startingAmountAwarded * granularDelta) / InterpolationGranularity;
+            uint256 startingAmountAwarded = ((usersLock.endBlockTime - usersLock.startBlockTime) * usersLock.startingAmountLocked) / 104 weeks;
+            uint256 granularDelta = ((usersLock.endBlockTime - currentTimestamp) * interpolationGranularity) / (usersLock.endBlockTime - usersLock.startBlockTime);
+            power += (startingAmountAwarded * granularDelta) / interpolationGranularity;
         }
         return power;
     }
@@ -108,7 +123,7 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @notice Retrieve a list of all users who have ever staked
     /// @return An array of addresses of all users who have ever staked
     function getAllUsers() public view returns (address[] memory) {
-        return Users;
+        return users;
     }
 
     /// @notice Check if a user has ever created a Lock in this contract
@@ -116,8 +131,8 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @dev This may be used by the web application to determine if the UI says "Create Lock" or "Add to Lock"
     /// @return True if the user has ever created a lock
     function isUserLocked(address _userAddr) public view returns (bool) {
-        LockVe memory usersLock = Locks[_userAddr];
-        return usersLock.Initialized;
+        LockVe memory usersLock = locks[_userAddr];
+        return usersLock.initialized;
     }
 
     /// @notice View a users Lock
@@ -125,14 +140,16 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @dev This may be used by the web application for graphical illustration purposes
     /// @return Users Lock in the format of the LockVe struct
     function getLock(address _userAddr) public view returns (LockVe memory) {
-        return Locks[_userAddr];
+        return locks[_userAddr];
     }
 
     /// @notice Allow owner to reclaim tokens not matching the deposit token
     /// @notice Some users may have accidentally sent these to the contract
     /// @param _token Address of the non-deposit token
+    /// @dev Always ensure the _token is legitimate before calling this
+    /// @dev A bad token can mimic safetransfer or balanceof with a nocive function
     function ownerRemoveNonDepositToken(address _token) public nonReentrant onlyOwner {
-        require(_token != StakedToken, "!invalid");
+        require(_token != stakedToken, "!invalid");
         uint256 balanceOfToken = IERC20(_token).balanceOf(address(this));
         require(balanceOfToken > 0, "!balance");
         IERC20(_token).safeTransfer(owner(), balanceOfToken);
@@ -143,14 +160,16 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @dev This will need to be called by the web application via a button or some other means
     function claimMyFunds() external nonReentrant {
         address userAddr = msg.sender;
-        uint256 totalFundsDeposited = LockedFunds[userAddr] + DeferredFunds[userAddr];
+        uint256 totalFundsDeposited = lockedFunds[userAddr] + deferredFunds[userAddr];
         uint256 currentBalance = getBalance(userAddr);
         uint256 fundsToClaim = totalFundsDeposited - currentBalance;
 
-        IERC20(StakedToken).safeTransfer(userAddr, fundsToClaim);
+        IERC20(stakedToken).safeTransfer(userAddr, fundsToClaim);
 
-        LockedFunds[userAddr] = currentBalance;
-        DeferredFunds[userAddr] = 0;
+        lockedFunds[userAddr] = currentBalance;
+        deferredFunds[userAddr] = 0;
+
+        emit userClaimed(userAddr, fundsToClaim);
     }
 
     /// @notice Create/extend the duration of the invoking users lock and/or deposit additional tokens into it
@@ -162,45 +181,54 @@ contract VestingStake is ReentrancyGuard, Ownable {
 
         // Retrieve lock the user may have already created
         address userAddr = msg.sender;
-        LockVe memory usersLock = Locks[userAddr];
+        LockVe memory usersLock = locks[userAddr];
 
         uint256 oldDurationRemaining = 0;
 
         // Keep track of new user or pre-existing lockout period
-        if (!usersLock.Initialized) {
-            Users.push(userAddr);
-        } else if (block.timestamp < usersLock.EndBlockTime) {
-            oldDurationRemaining = usersLock.EndBlockTime - block.timestamp;
+        if (!usersLock.initialized) {
+            users.push(userAddr);
+        } else if (block.timestamp < usersLock.endBlockTime) {
+            oldDurationRemaining = usersLock.endBlockTime - block.timestamp;
         }
 
         require (oldDurationRemaining + _duration <= 104 weeks, ">2 years");
 
         // Receive the users tokens
-        require(IERC20(StakedToken).balanceOf(userAddr) >= _amount, "!balance");
-        IERC20(StakedToken).safeTransferFrom(userAddr,  address(this), _amount);
+        require(IERC20(stakedToken).balanceOf(userAddr) >= _amount, "!balance");
+        require(IERC20(stakedToken).allowance(userAddr, address(this)) >= _amount, "!approved");
+        IERC20(stakedToken).safeTransferFrom(userAddr,  address(this), _amount);
 
         // Account for balance / unclaimed funds
-        uint256 totalFundsDeposited = LockedFunds[userAddr];
+        uint256 totalFundsDeposited = lockedFunds[userAddr];
         uint256 oldBalance = getBalance(userAddr);
         uint256 fundsUnclaimed = totalFundsDeposited - oldBalance;
         if (!_deferUnclaimed) {
-            fundsUnclaimed += DeferredFunds[userAddr];
-            IERC20(StakedToken).safeTransfer(userAddr, fundsUnclaimed);
-            DeferredFunds[userAddr] = 0;
+            fundsUnclaimed += deferredFunds[userAddr];
+            IERC20(stakedToken).safeTransfer(userAddr, fundsUnclaimed);
+            deferredFunds[userAddr] = 0;
+            emit userClaimed(userAddr, fundsUnclaimed);
         } else {
-            DeferredFunds[userAddr] += fundsUnclaimed;
+            deferredFunds[userAddr] += fundsUnclaimed;
         }
         uint256 newTotalDeposit = oldBalance + _amount;
 
         // Update balance
-        LockedFunds[userAddr] = newTotalDeposit;
+        lockedFunds[userAddr] = newTotalDeposit;
 
         // Fill out updated LockVe struct
         LockVe memory newLock;
-        newLock.StartBlockTime = block.timestamp;
-        newLock.EndBlockTime = newLock.StartBlockTime + _duration + oldDurationRemaining;
-        newLock.StartingAmountLocked = newTotalDeposit;
-        newLock.Initialized = true;
-        Locks[userAddr] = newLock;
+        newLock.startBlockTime = block.timestamp;
+        newLock.endBlockTime = newLock.startBlockTime + _duration + oldDurationRemaining;
+        newLock.startingAmountLocked = newTotalDeposit;
+        newLock.initialized = true;
+        locks[userAddr] = newLock;
+
+        // Events
+        if (oldDurationRemaining == 0) {
+            emit userStaked(userAddr, newTotalDeposit, newLock.endBlockTime - newLock.startBlockTime);
+        } else {
+            emit userExtended(userAddr, newTotalDeposit, newLock.endBlockTime - newLock.startBlockTime);
+        }
     }
 }
