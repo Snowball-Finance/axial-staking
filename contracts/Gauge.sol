@@ -224,10 +224,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         updateReward(account)
     {
         require(amount > 0, "Cannot stake 0");
+        poolToken.safeTransferFrom(account, address(this), amount);
         _totalSupply = _totalSupply.add(amount);
         _balances[account] = _balances[account].add(amount);
         emit Staked(account, amount);
-        poolToken.safeTransferFrom(account, address(this), amount);
     }
 
     /// @notice deposits all pool tokens to the gauge
@@ -242,8 +242,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     /// @notice deposit specified amount of tokens into the gauge on behalf of specified account
     /// @param amount amount of tokens to be deposited
-    /// @param account account to depoit from
+    /// @param account account to deposit from
     function depositFor(uint256 amount, address account) external {
+        require(account != address(this), "!account"); // prevent inflation
         _deposit(amount, account);
     }
 
@@ -253,10 +254,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         nonReentrant
         updateReward(msg.sender)
     {
+        poolToken.safeTransfer(msg.sender, amount);
         require(amount > 0, "Cannot withdraw 0");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        poolToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -278,8 +279,8 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     {
         uint256 reward = rewards[msg.sender][rewardTokens[tokenIndex]];
         if (reward > 0) {
-            rewards[msg.sender][rewardTokens[tokenIndex]] = 0;
             IERC20(rewardTokens[tokenIndex]).safeTransfer(msg.sender, reward);
+            rewards[msg.sender][rewardTokens[tokenIndex]] = 0;
             emit RewardPaid(msg.sender, reward, rewardTokens[tokenIndex]);
         }
     }
