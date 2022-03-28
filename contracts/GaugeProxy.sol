@@ -3,7 +3,8 @@ pragma solidity 0.8.9;
 
 import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
 import {Strategist} from "./libraries/Strategist.sol";
-import {StakedAxialToken} from "./StakedAxialToken.sol";
+import {AccruingStake} from "./AccruingStake.sol";
+import {VestingStake} from "./VestingStake.sol";
 import {IMasterChefAxialV3} from "./interfaces/IMasterChefAxialV3.sol";
 import {AxialDummyToken} from "./AxialDummyToken.sol";
 import {Gauge} from "./Gauge.sol";
@@ -24,7 +25,7 @@ contract GaugeProxy is ProtocolGovernance {
         IMasterChefAxialV3(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3);
 
     /// @notice token for voting on Axial distribution to pools - SAXIAL
-    StakedAxialToken public immutable sAxial;
+    VestingStake public immutable sAxial;
 
     /// @notice the Axial token contraxt
     IERC20 public immutable Axial;
@@ -33,9 +34,8 @@ contract GaugeProxy is ProtocolGovernance {
     IERC20 public immutable axialDummyToken;
 
     /// @notice token to allow boosting rewards - VEAXIAL
-    // TODO: Should be replaced with actual type (AccruingStake) when code is complete.
-    // Temporarily set as IERC20 to allow testing
-    IERC20 public immutable veAxial;
+    /// @dev This could be an address instead, as we do not use it other than passing the address to the Gauge constructor
+    AccruingStake public immutable veAxial;
 
     // ==================== Token Voting Storage ==================== //
 
@@ -74,8 +74,8 @@ contract GaugeProxy is ProtocolGovernance {
     ) {
         governance = _governance;
         Axial = IERC20(_axial);
-        sAxial = StakedAxialToken(_saxial);
-        veAxial = IERC20(_veaxial);
+        sAxial = VestingStake(_saxial);
+        veAxial = AccruingStake(_veaxial);
         axialDummyToken = new AxialDummyToken();
     }
 

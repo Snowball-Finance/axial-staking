@@ -2,7 +2,7 @@
 pragma solidity 0.8.9;
 
 import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
-import {StakedAxialToken} from "./StakedAxialToken.sol";
+import {AccruingStake} from "./AccruingStake.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
@@ -17,14 +17,12 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     // ==================== External Dependencies ==================== //
 
-    /// @notice the Axial token contraxt
+    /// @notice the Axial token contract
     IERC20 public constant AXIAL =
         IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
 
     /// @notice token to allow boosting rewards - VEAXIAL
-    // TODO: Should be replaced with actual type (AccruingStake) when code is complete.
-    // Temporarily set as IERC20 to allow testing
-    IERC20 public immutable VEAXIAL;
+    AccruingStake public immutable VEAXIAL;
 
     /// @notice token to be staked in return for rewards
     IERC20 public immutable poolToken;
@@ -41,7 +39,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     /// @dev tokens to be distributed as a reward to stakers
     address[] public rewardTokens;
     /// @dev contract responsible for distributing rewards (should be Gauge Proxy)
-    address public distribution; //TODO: Maybe rename to gaugeProxy?
+    address public gaugeProxy;
     uint256 public constant DURATION = 7 days;
 
     uint256 public periodFinish = 0;
@@ -82,7 +80,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     }
 
     modifier onlyDistribution() {
-        require(msg.sender == distribution, "Gauge: not distribution contract");
+        require(msg.sender == gaugeProxy, "Gauge: not distribution contract");
         _;
     }
 
@@ -97,9 +95,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         address _veaxial
     ) {
         poolToken = IERC20(_token);
-        distribution = msg.sender;
+        gaugeProxy = msg.sender;
         governance = _governance;
-        VEAXIAL = IERC20(_veaxial);
+        VEAXIAL = AccruingStake(_veaxial);
     }
 
     // ==================== Reward Token Logic ==================== //
@@ -127,14 +125,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         if (_totalSupply == 0) {
             return rewardPerTokenStored[rewardTokens[tokenIndex]];
         }
-        return
-            rewardPerTokenStored[rewardTokens[tokenIndex]].add(
-                lastTimeRewardApplicable()
-                    .sub(lastUpdateTime)
-                    .mul(rewardRates[rewardTokens[tokenIndex]])
-                    .mul(1e18)
-                    .div(derivedSupply)
-            );
+
+        // rPTS + (lTRA - lUT * rR * 1e18 / dS)
+        return rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[rewardTokens[tokenIndex]]).mul(1e18).div(derivedSupply));
     }
 
     /// @notice getting the reward to be received for each reward's respective staking period
@@ -152,23 +145,14 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         view
         returns (uint256)
     {
-        return
-            derivedBalances[account]
-                .mul(
-                    rewardPerToken(tokenIndex).sub(
-                        userRewardPerTokenPaid[account][
-                            rewardTokens[tokenIndex]
-                        ]
-                    )
-                )
-                .div(1e18)
-                .add(rewards[account][rewardTokens[tokenIndex]]);
+        // x = dB * ( rPT - uRPTP ) / 1e18 + r 
+        return derivedBalances[account].mul(rewardPerToken(tokenIndex).sub(userRewardPerTokenPaid[account][rewardTokens[tokenIndex]])).div(1e18).add(rewards[account][rewardTokens[tokenIndex]]);
     }
 
     /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
     /// @dev this changes where it is receiving the axial tokens, as well as changes the governance
     function changeDistribution(address _distribution) external onlyGovernance {
-        distribution = _distribution;
+        gaugeProxy = _distribution;
     }
 
     /// @notice total supply of our lp tokens in the gauge (e.g. AC4D tokens present)
@@ -194,17 +178,13 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
             return 0;
         }
 
-        // TODO: Uncomment when VEAxial is complete & confirm functions are correct
-        // uint256 usersVeAxialBalance = VEAXIAL.getAccrued(account); // get the veAxial balance of the account
-        // uint256 totalVeAxial = VEAXIAL.getTotalAccrued(); // get the total veAxial
+        uint256 usersVeAxialBalance = VEAXIAL.getAccrued(account); // get the veAxial balance of the account
+        uint256 totalVeAxial = VEAXIAL.getTotalAccrued(); // get the total veAxial
 
-        // TODO: Remove when veAxial is complete
-        uint256 usersVeAxialBalance = VEAXIAL.balanceOf(account);
-        uint256 totalVeAxial = VEAXIAL.totalSupply();
-
-        uint256 _adjusted = (
-            _totalSupply.mul(usersVeAxialBalance).div(totalVeAxial)
-        );
+        uint256 _adjusted;
+        if (totalVeAxial != 0) {
+            _adjusted = (_totalSupply.mul(usersVeAxialBalance).div(totalVeAxial));
+        }
 
         return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
     }
@@ -298,7 +278,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         updateReward(address(0))
     {
         IERC20(rewardTokens[tokenIndex]).safeTransferFrom(
-            distribution,
+            gaugeProxy,
             address(this),
             reward
         );
@@ -338,7 +318,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         updateReward(address(0))
     {
         IERC20(rewardTokens[0]).safeTransferFrom(
-            distribution,
+            gaugeProxy,
             address(this),
             reward
         );

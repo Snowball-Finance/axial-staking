@@ -6,15 +6,18 @@ import { ethers } from "hardhat";
 import {
   ERC20TokenMock,
   ERC20TokenMock__factory,
+  AccruingStake,
+  AccruingStake__factory,
   Gauge,
   Gauge__factory,
 } from "../typechain";
-import { fastForwardAWeek } from "./utils";
+import { fastForwardAWeek, increaseTime } from "./utils";
 
 let deployer: SignerWithAddress;
 let user: SignerWithAddress;
 
-let veAxial: ERC20TokenMock;
+let axial: ERC20TokenMock;
+let veAxial: AccruingStake;
 let testPoolToken: ERC20TokenMock;
 let testRewardToken: ERC20TokenMock;
 let testGauge: Gauge;
@@ -90,6 +93,8 @@ describe.only("Gauge:", function () {
   it.skip("Should boost users balance when holding veAxial", async function () {
     await testPoolToken.connect(deployer).mint(user.address, 100);
 
+    await veAxial.connect(deployer).stake(900);
+
     // Add reward token
     await testGauge.connect(deployer).addRewardToken(testRewardToken.address);
 
@@ -107,18 +112,20 @@ describe.only("Gauge:", function () {
 
     // Get gauge.earned without any veAxial
     const userEarnedBeforeBoost = await testGauge.earned(user.address, 0);
-    console.log("userEarnedBeforeBoost", userEarnedBeforeBoost);
+    console.log("userEarnedBeforeBoost", userEarnedBeforeBoost.toNumber());
 
     // Transfer veAxial to user
-    await veAxial.connect(deployer).transfer(user.address, 100);
+    //await veAxial.connect(deployer).transfer(user.address, 100);
+    await veAxial.connect(user).stake(100);
 
+    //await increaseTime(60 * 60 * 24 * 365);
     await fastForwardAWeek();
 
     await testGauge.connect(user).getReward(0);
 
     // Get gauge.earned with veAxial
     const userEarnedAfterBoost = await testGauge.earned(user.address, 0);
-    console.log("userEarnedAfterBoost", userEarnedAfterBoost);
+    console.log("userEarnedAfterBoost", userEarnedAfterBoost.toNumber());
   });
 });
 
@@ -132,11 +139,10 @@ async function setupTest(): Promise<void> {
     "TST"
   );
 
-  // Deplpy veAxial
-  veAxial = await new ERC20TokenMock__factory(deployer).deploy(
-    "veAxial",
-    "veAxial"
-  );
+  // Deploy Axial dummy token
+  axial = await new ERC20TokenMock__factory(deployer).deploy("Axial", "AXIAL");
+
+  veAxial = await new AccruingStake__factory(deployer).deploy(axial.address, "veAxial", "VEAXIAL", deployer.address);
 
   // Deploy test reward token
   testRewardToken = await new ERC20TokenMock__factory(deployer).deploy(
@@ -156,8 +162,11 @@ async function setupTest(): Promise<void> {
     .connect(deployer)
     .mint(deployer.address, await testRewardToken.maxSupply());
 
-  // Mint veAxial to deployer
-  await veAxial
-    .connect(deployer)
-    .mint(deployer.address, await veAxial.maxSupply());
+  // Mint axial to user
+  await axial.connect(deployer).mint(user.address, 100);
+  await axial.connect(user).approve(veAxial.address, 100);
+
+  // mint axial to someone else
+  await axial.connect(deployer).mint(deployer.address, 900);
+  await axial.connect(deployer).approve(veAxial.address, 900);
 }

@@ -144,6 +144,7 @@ async function stakeAndVote(
   user: SignerWithAddress,
   weight: BigNumberish
 ): Promise<void> {
+
   const userBalanceBeforeStake = await axial.balanceOf(user.address);
   expect(userBalanceBeforeStake).to.eq(await axial.maxSupply());
 
