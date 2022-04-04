@@ -100,6 +100,11 @@ contract VestingStake is ReentrancyGuard, Ownable {
         return balance;
     }
 
+    /// @notice This is an overload for getPower so that users can see the 'token' in their wallets
+    function balanceOf(address _account) external view returns (uint256) {
+        return getPower(_account);
+    }
+
     /// @notice Calculate the number of governance tokens currently allocated to a user by this contract
     /// @param _userAddr Address of any user to view the number of governance tokens currently awarded to them
     /// @return Quantity of governance tokens allocated to the user
