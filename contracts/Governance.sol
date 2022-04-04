@@ -47,7 +47,7 @@ contract Governance is ReentrancyGuard, Ownable {
     mapping(uint256 => mapping(address => Receipt)) public receipts;
     mapping(address => uint256) public lastProposalByAddress;
 
-    /// @notice Non-tradeable xSNOB used to represent votes
+    /// @notice Non-tradeable sAXIAL used to represent votes
     IsAxial public sAXIAL;
 
     struct Proposal {
