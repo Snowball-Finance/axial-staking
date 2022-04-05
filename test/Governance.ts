@@ -1,7 +1,7 @@
 import { solidity } from "ethereum-waffle"
 
 // eslint-disable-next-line node/no-missing-import
-import { AccruingStake, ERC20TokenMock } from "../typechain"
+import { VestingStake, AccruingStake, ERC20TokenMock, Governance } from "../typechain"
 import chai from "chai"
 import { ethers } from "hardhat"
 import { BigNumber, Signer } from "ethers"
@@ -15,7 +15,7 @@ async function increaseTimestamp(amount: number) {
   await ethers.provider.send('evm_mine', []);
 }
 
-describe("AccruingStake", () => {
+describe("Governance", () => {
   let deployer: Signer
   let governance: Signer
   let alice: Signer
@@ -23,7 +23,9 @@ describe("AccruingStake", () => {
   let carol: Signer
 
   let axialToken: ERC20TokenMock
+  let stakingVe: VestingStake
   let stakingAc: AccruingStake
+  let voteGovernance: Governance
 
   let aliceAddr: string
   let bobAddr: string
@@ -43,18 +45,53 @@ describe("AccruingStake", () => {
     carolAddr = await carol.getAddress()
     governanceAddr = await governance.getAddress()
 
+    const stakingVeFactory = await ethers.getContractFactory("VestingStake");
     const stakingAcFactory = await ethers.getContractFactory("AccruingStake");
+
     axialToken = await (await ethers.getContractFactory("ERC20TokenMock")).deploy("Axial", "AXIAL");
 
-    await axialToken.connect(deployer).mints([ await deployer.getAddress(), aliceAddr, bobAddr, carolAddr, ], [1000, 10, 100, 500])
+    await axialToken.connect(deployer).mints([ await deployer.getAddress(), aliceAddr, bobAddr, carolAddr, ], [500000, 500000, 500000, 500000])
+
+    stakingVe = await stakingVeFactory.deploy(axialToken.address, "sAxial", "SAXIAL", await governance.getAddress())
     stakingAc = await stakingAcFactory.deploy(axialToken.address, "veAxial", "VEAXIAL", await governance.getAddress())
+
+    const governanceFactory = await ethers.getContractFactory("Governance");
+    voteGovernance = await governanceFactory.deploy(stakingVe.address);
   })
 
   // Test cases:
 
-  it("User cannot create lock with more tokens then they have", async () => {
-    await axialToken.connect(alice).approve(stakingAc.address, 1000)
-    await expect(stakingAc.connect(alice).stake(1000)).to.be.revertedWith("!balance")
+  it.only("User cannot propose if they do not have enough staked", async () => {
+    await axialToken.connect(alice).approve(stakingVe.address, 500000)
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, 500000, false);
+
+    // Propose() :
+    // string calldata _title,
+    // string calldata _metadata,
+    // uint256 _votingPeriod,
+    // string[] calldata _executionLabels,
+    // address[] calldata _targets,
+    // uint256[] calldata _values,
+    // bytes[] memory _data,
+    // bool _isBoolean
+
+    let actionApproveSAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingVe.address, 500]);
+    let actionStakeSAXIAL = stakingVe.interface.encodeFunctionData("stake", [SECONDS_IN_A_YEAR * 2, 500, false]);
+    let actionApproveVEAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingAc.address, 500]);
+    let actionStakeVEAXIAL = stakingAc.interface.encodeFunctionData("stake", [500]);
+
+    let labels = ["Governance Approve 500 for Staked Axial", 
+                  "Governance Stake 500 Axial into sAxial", 
+                  "Governance Approve 500 for veAxial", 
+                  "Governance Stake 500 Axial into veAxial"];
+
+    let targets = [axialToken.address, stakingVe.address, axialToken.address, stakingAc.address];
+    let values = [0, 0, 0, 0];
+    let data = [actionApproveSAXIAL, actionStakeSAXIAL, actionApproveVEAXIAL, actionStakeVEAXIAL];
+
+    let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts(labels, targets, values, data);
+    let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test Title", "Test Metadata", SECONDS_IN_A_WEEK, true);
+    await voteGovernance.connect(alice).propose(metaData, executionContexts);
   })
 
   it("Locking 10 tokens results in 0 reward tokens immediately and locked balance of 10", async () => {

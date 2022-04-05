@@ -15,13 +15,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // const governance = "0xfdCcf6D49A29f435E509DFFAAFDecB0ADD93f8C0";
     // const axialToken = "0xcF8419A615c57511807236751c0AF38Db4ba3351";
 
-    const deployedContract = await deploy('sAxial', {
+    const deployedContract = await deploy('veAxial', {
         from: deployer,
-        contract: "VestingStake",
-        args: [axialToken, "sAxial", "sAXIAL", governance ],
+        contract: "AccruingStake",
+        args: [axialToken, "veAxial", "veAXIAL", governance ],
     });
 
     console.log("Deployed contract at", deployedContract.address);
 };
 export default func;
-func.tags = ['sAxial'];
+func.tags = ['veAxial'];

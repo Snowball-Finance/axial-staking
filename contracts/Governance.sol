@@ -10,6 +10,8 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+import "hardhat/console.sol";
+
 interface IsAxial {
   function balanceOf(address _account) external view returns (uint256);
 }
@@ -30,14 +32,14 @@ contract Governance is ReentrancyGuard, Ownable {
     uint256 public constant EXPIRATION_PERIOD = 14 days;
 
     /// @notice The required minimum number of votes in support of a proposal for it to succeed
-    uint256 public quorumVotes = 300_000e18;
-    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000e18;
-    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000e18;
+    uint256 public quorumVotes = 300_000;
+    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000;
+    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000;
 
     /// @notice The minimum number of votes required for an account to create a proposal
-    uint256 public proposalThreshold = 100_000e18;
-    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000e18;
-    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000e18;
+    uint256 public proposalThreshold = 100_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000;
 
     /// @notice The total number of proposals
     uint256 public proposalCount;
@@ -61,7 +63,7 @@ contract Governance is ReentrancyGuard, Ownable {
         uint256 executionDelay;
         uint256[] votes;
         bool isBoolean;
-        ProposalExecutionContext[] executionContexts;
+        ProposalExecutionContextList executionContexts;
     }
 
     struct ProposalExecutionContext {
@@ -69,6 +71,11 @@ contract Governance is ReentrancyGuard, Ownable {
         address target; // The contract we wish to manipulate
         uint256 value; // We set this if the function requires native AVAX
         bytes data; // *encoded* function and parameters being executed at target
+    }
+
+    struct ProposalExecutionContextList {
+        uint256 length;
+        ProposalExecutionContext[] contexts;
     }
 
     struct Receipt {
@@ -100,57 +107,6 @@ contract Governance is ReentrancyGuard, Ownable {
     event ExecutionDelayChanged(uint256 newExecutionDelay);
     event QuorumVotesChanges(uint256 newQuorumVotes);
     event ProposalThresholdChanged(uint256 newProposalThreshold);
-
-    /// @notice Ensures valid data is passed into the Propose method
-    /// @notice Also ensures the invoking user has the right to propose 
-    modifier validProposal(
-        string calldata _title,
-        string calldata _metadata,
-        uint256 _votingPeriod,
-        string[] calldata _executionLabels,
-        address[] calldata _targets,
-        uint256[] calldata _values,
-        bytes[] memory _data,
-        address _msgSender) {
-        require(
-            _executionLabels.length == _targets.length && 
-            _targets.length == _values.length && 
-            _values.length == _data.length,
-            "Governance::propose: mismatched execution data lengths"
-        );
-
-        require(
-            _votingPeriod >= minimumVotingPeriod,
-            "Governance::propose: voting period too short"
-        );
-
-        require(
-            _votingPeriod <= VOTING_PERIOD_MAXIMUM,
-            "Governance::propose: voting period too long"
-        );
-
-        uint256 lastProposalId = lastProposalByAddress[_msgSender];
-
-        // Prevent the same person from having concurrent proposals
-        if (lastProposalId > 0) {
-            ProposalState proposalState = state(lastProposalId);
-            require(
-                proposalState == ProposalState.Executed ||
-                proposalState == ProposalState.Defeated ||
-                proposalState == ProposalState.Expired,
-                "Governance::propose: proposer already has a proposal in progress"
-            );
-        }
-
-        uint256 votes = sAXIAL.balanceOf(_msgSender);
-
-        // user needs to have enough voting power to be allowed to propose
-        require(
-            votes > proposalThreshold,
-            "Governance::propose: proposer votes below proposal threshold"
-        );
-        _;
-    }
 
     /// @notice Constructor
     /// @param _sAXIAL the address of the contract which determines each users voting power
@@ -275,72 +231,112 @@ contract Governance is ReentrancyGuard, Ownable {
         return receipts[_proposalId][_voter];
     }
 
+    function constructProposalExecutionContexts(string[] calldata _labels, 
+                                               address[] calldata _targets, 
+                                               uint256[] calldata _values, 
+                                               bytes[] calldata _data) 
+                                               public pure returns (ProposalExecutionContextList memory) {
+        require(_labels.length == _targets.length && _targets.length == _values.length && _values.length == _data.length, "!length");
+        uint256 length = _labels.length;
+        ProposalExecutionContextList memory list;
+        list.length = length;
+        list.contexts = new ProposalExecutionContext[](length);
+            for (uint256 i = 0; i < length; ++i) {
+                ProposalExecutionContext memory newProposalExecutionContext = ProposalExecutionContext({
+                    label: _labels[i],
+                    target: _targets[i],
+                    value: _values[i],
+                    data: _data[i]
+                });
+
+                list.contexts[i] = newProposalExecutionContext;
+            }
+        return list;
+    }
+
+    function constructProposalMetadata(string calldata _title, 
+                                       string calldata _metadata, 
+                                       uint256 _votingPeriod, 
+                                       bool _isBoolean) 
+                                       public pure returns (Proposal memory) {
+        Proposal memory metaData;
+        metaData.title = _title;
+        metaData.metadata = _metadata;
+        metaData.votingPeriod = _votingPeriod;
+        metaData.isBoolean = _isBoolean;
+        return metaData;
+    }
+
     /// @notice Allows any user with sufficient priviledges to propose a new vote
-    /// @param _title The name of the proposal
-    /// @param _metadata Metadata for the proposal
-    /// @param _votingPeriod Length of time the proposal can be voted on
-    /// @param _executionLabels Array of descriptions for the proposed actions to execute
-    /// @param _targets Array of contract addresses for proposed actions to manipulate
-    /// @param _values Array of quantities of native AVAX if execution requires ([0, 0, 0, ...] otherwise)
-    /// @param _data Array of *encoded* functions and parameters being executed at targets
-    /// @param _isBoolean True if proposing yes/no for multiple targets, False if selecting a single target from multiple options
+    /// @param _metaData Metadata struct generated via constructProposalMetadata
+    /// @param _executionContexts Execution struct generated via constructExecutionContexts
     function propose(
-        string calldata _title,
-        string calldata _metadata,
-        uint256 _votingPeriod,
-        string[] calldata _executionLabels,
-        address[] calldata _targets,
-        uint256[] calldata _values,
-        bytes[] memory _data,
-        bool _isBoolean
-    ) public validProposal(
-        _title,
-        _metadata,
-        _votingPeriod,
-        _executionLabels,
-        _targets,
-        _values,
-        _data,
-        msg.sender) {
+        Proposal memory _metaData,
+        ProposalExecutionContextList memory _executionContexts
+    ) public  {
+        require(_executionContexts.length == _executionContexts.contexts.length,
+            "Governance::propose: Malformed execution contexts list"
+        );
 
-        // Allocate execution contexts
-        ProposalExecutionContext[] memory executionContexts = new ProposalExecutionContext[](_targets.length);
-        for (uint256 i = 0; i < _targets.length; ++i) {
-            ProposalExecutionContext memory newProposalExecutionContext = ProposalExecutionContext({
-                label: _executionLabels[i],
-                target: _targets[i],
-                value: _values[i],
-                data: _data[i]
-            });
+        require(
+            _metaData.votingPeriod >= minimumVotingPeriod,
+            "Governance::propose: voting period too short"
+        );
 
-            executionContexts[i] = newProposalExecutionContext;
+        require(
+            _metaData.votingPeriod <= VOTING_PERIOD_MAXIMUM,
+            "Governance::propose: voting period too long"
+        );
+
+        uint256 lastProposalId = lastProposalByAddress[msg.sender];
+
+        // Prevent the same person from having concurrent proposals
+        if (lastProposalId > 0) {
+            ProposalState proposalState = state(lastProposalId);
+            require(
+                proposalState == ProposalState.Executed ||
+                proposalState == ProposalState.Defeated ||
+                proposalState == ProposalState.Expired,
+                "Governance::propose: proposer already has a proposal in progress"
+            );
         }
+
+        uint256 votes = sAXIAL.balanceOf(msg.sender);
+        console.log("User votes: ", votes);
+
+        // user needs to have enough voting power to be allowed to propose
+        require(
+            votes > proposalThreshold,
+            "Governance::propose: proposer votes below proposal threshold"
+        );
 
         // Allocate voting options
         uint256[] memory isMultipleChoice;
-        if (!_isBoolean) {
-            isMultipleChoice = new uint256[](_executionLabels.length);
+        if (!_metaData.isBoolean) {
+            isMultipleChoice = new uint256[](_executionContexts.length);
         } else {
             isMultipleChoice = new uint256[](2); // 0: No, 1: Yes
         }
 
-        // Allocate proposal
-        Proposal memory newProposal = Proposal({
-            title: _title,
-            metadata: _metadata,
-            proposer: msg.sender,
-            executor: address(0),
-            startTime: block.timestamp,
-            votingPeriod: _votingPeriod,
-            quorumVotes: quorumVotes,
-            executionDelay: executionDelay,
-            votes: isMultipleChoice,
-            isBoolean: _isBoolean,
-            executionContexts: executionContexts
-        });
+        Proposal storage newProposal = proposals[proposalCount];
+        newProposal.title = _metaData.title;
+        newProposal.metadata = _metaData.metadata;
+        newProposal.proposer = msg.sender;
+        newProposal.executor = address(0);
+        newProposal.startTime = block.timestamp;
+        newProposal.votingPeriod = _metaData.votingPeriod;
+        newProposal.quorumVotes = quorumVotes;
+        newProposal.executionDelay = executionDelay;
+        newProposal.votes = isMultipleChoice;
+        newProposal.isBoolean = _metaData.isBoolean;
+        for (uint256 i = 0; i < _executionContexts.length; ++i) {
+            newProposal.executionContexts.contexts.push(_executionContexts.contexts[i]);
+        }
+        newProposal.executionContexts.length = _executionContexts.length;
 
-        // Save new proposal to state
-        proposals[proposalCount] = newProposal;
+
+        //Save new proposal to state
+        //proposals[proposalCount] = newProposal;
         lastProposalByAddress[msg.sender] = proposalCount;
 
         ++proposalCount;
@@ -390,17 +386,17 @@ contract Governance is ReentrancyGuard, Ownable {
 
         Proposal storage proposal = proposals[_proposalId];
 
-        ProposalExecutionContext[] storage proposalExecutionContexts = proposal.executionContexts;
+        ProposalExecutionContextList storage proposalExecution = proposal.executionContexts;
 
         bytes[] memory returnDatas;
 
         // If yes/no options were given, execute all
         if (proposal.isBoolean) {
-            returnDatas = new bytes[](proposalExecutionContexts.length);
-            for (uint256 i = 0; i < proposalExecutionContexts.length; ++i) {
-                (bool success, bytes memory returnData) = proposalExecutionContexts[i].target.call{
-                                                   value: proposalExecutionContexts[i].value}(
-                                                          proposalExecutionContexts[i].data);
+            returnDatas = new bytes[](proposalExecution.length);
+            for (uint256 i = 0; i < proposalExecution.length; ++i) {
+                (bool success, bytes memory returnData) = proposalExecution.contexts[i].target.call{
+                                                   value: proposalExecution.contexts[i].value}(
+                                                          proposalExecution.contexts[i].data);
                 require(
                     success,
                     "Governance::execute: transaction execution reverted."
@@ -418,9 +414,9 @@ contract Governance is ReentrancyGuard, Ownable {
                     contextToExecute = i;
                 }
             }
-            (bool success, bytes memory returnData) = proposalExecutionContexts[contextToExecute].target.call{
-                                               value: proposalExecutionContexts[contextToExecute].value}(
-                                                      proposalExecutionContexts[contextToExecute].data);
+            (bool success, bytes memory returnData) = proposalExecution.contexts[contextToExecute].target.call{
+                                               value: proposalExecution.contexts[contextToExecute].value}(
+                                                      proposalExecution.contexts[contextToExecute].data);
             require(
                 success,
                 "Governance::execute: transaction execution reverted."
