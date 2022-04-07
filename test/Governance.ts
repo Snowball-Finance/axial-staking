@@ -6,6 +6,7 @@ import chai from "chai"
 import { ethers } from "hardhat"
 import { BigNumber, Signer } from "ethers"
 import { getCostOfAVAXPerGas, gasCostToBlockLimit, gasCostToAvax, gasCostToUSD } from "./utils";
+import { exec } from "child_process"
 
 chai.use(solidity)
 const { expect } = chai
@@ -61,7 +62,17 @@ describe("Governance", () => {
 
   // Test cases:
 
-  it.only("User cannot propose if they do not have enough staked", async () => {
+  it("User cannot propose if they do not have enough staked", async () => {
+    await axialToken.connect(alice).approve(stakingVe.address, 100);
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, 100, false);
+
+    let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts([],[],[],[]);
+    let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test title", "Test Metadata", SECONDS_IN_A_WEEK, true);
+    await expect(voteGovernance.connect(alice).propose(metaData, executionContexts)).to.be.revertedWith(
+                                          "Governance::propose: proposer votes below proposal threshold");
+  })
+
+  it("User can propose if they have enough staked", async () => {
     await axialToken.connect(alice).approve(stakingVe.address, 500000)
     await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, 500000, false);
 
@@ -92,6 +103,30 @@ describe("Governance", () => {
     let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts(labels, targets, values, data);
     let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test Title", "Test Metadata", SECONDS_IN_A_WEEK, true);
     await voteGovernance.connect(alice).propose(metaData, executionContexts);
+  })
+
+  it("Proposal reverts when malformed arguments are provided", async () => {
+    await axialToken.connect(alice).approve(stakingVe.address, 500000);
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, 500000, false);
+
+    let actionApproveSAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingVe.address, 500]);
+    let actionStakeSAXIAL = stakingVe.interface.encodeFunctionData("stake", [SECONDS_IN_A_YEAR * 2, 500, false]);
+    let actionApproveVEAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingAc.address, 500]);
+    let actionStakeVEAXIAL = stakingAc.interface.encodeFunctionData("stake", [500]);
+
+    let labels = ["Governance Approve 500 for Staked Axial", 
+                  "Governance Stake 500 Axial into sAxial", 
+                  //"Governance Approve 500 for veAxial", 
+                  "Governance Stake 500 Axial into veAxial"];
+
+    let targets = [axialToken.address, stakingVe.address, axialToken.address, stakingAc.address];
+    let values = [0, 0, 0, 0];
+    let data = [actionApproveSAXIAL, actionStakeSAXIAL, actionApproveVEAXIAL, actionStakeVEAXIAL];
+
+    let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts(labels, targets, values, data);
+    let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test title", "Test Metadata", SECONDS_IN_A_WEEK, true);
+    await expect(voteGovernance.connect(alice).propose(metaData, executionContexts)).to.be.revertedWith(
+                                          "Governance::propose: proposer votes below proposal threshold");
   })
 
   it("Locking 10 tokens results in 0 reward tokens immediately and locked balance of 10", async () => {

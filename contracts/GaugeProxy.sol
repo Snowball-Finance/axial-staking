@@ -22,7 +22,8 @@ contract GaugeProxy is ProtocolGovernance {
 
     /// @notice Master Chef Axial V3 contract
     IMasterChefAxialV3 public constant MCAV3 =
-        IMasterChefAxialV3(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3);
+        //IMasterChefAxialV3(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3);
+        IMasterChefAxialV3(0x35225E5a6309a4823f900EeC047699ecFbE8d341);
 
     /// @notice token for voting on Axial distribution to pools - SAXIAL
     VestingStake public immutable sAxial;
@@ -42,7 +43,8 @@ contract GaugeProxy is ProtocolGovernance {
     /// @notice max time allowed to pass before distribution (6 hours)
     uint256 public constant DISTRIBUTION_DEADLINE = 21600;
 
-    uint256 public pid;
+    uint256 public constant UINT256_MAX = 2**256-1;
+    uint256 public pid = UINT256_MAX;
     uint256 public totalWeight;
     uint256 private lockedTotalWeight;
     uint256 private lockedBalance;
@@ -251,14 +253,14 @@ contract GaugeProxy is ProtocolGovernance {
 
     /// @notice Sets MCAV3 PID
     function setPID(uint256 _pid) external onlyGovernance {
-        require(pid == 0, "pid has already been set");
-        require(_pid > 0, "invalid pid");
+        require(pid == UINT256_MAX, "pid has already been set");
+        require(_pid < UINT256_MAX, "invalid pid");
         pid = _pid;
     }
 
     /// @notice Deposits Axial dummy token into MCAV3
     function deposit() public {
-        require(pid > 0, "pid not initialized");
+        require(pid < UINT256_MAX, "pid not initialized");
         uint256 _balance = axialDummyToken.balanceOf(address(this));
         axialDummyToken.safeApprove(address(MCAV3), 0);
         axialDummyToken.safeApprove(address(MCAV3), _balance);

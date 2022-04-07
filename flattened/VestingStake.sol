@@ -581,43 +581,45 @@ abstract contract Ownable is Context {
 }
 
 
-// File contracts/AccruingStake.sol
+// File contracts/VestingStake.sol
 
 pragma solidity 0.8.9;
 
-/// @title A staking contract which accrues over time based on the amount staked
+/// @title A vesting style staking contract with extendable linear decay
 /// @author Auroter
-/// @notice Allows you to lock tokens in exchange for distribution tokens
-/// @notice Locks can be deposited into or closed
-/// @dev Simply call stake(...) to deposit tokens
-/// @dev Call getAccrued(user) / getTotalAccrued() = users share
+/// @notice Allows you to lock tokens in exchange for governance tokens
+/// @notice Locks can be extended or deposited into
+/// @notice Maximum deposit duration is two years (104 weeks)
+/// @dev Simply call stake(...) to create initial lock or extend one that already exists for the user
 
 
 
 
-contract AccruingStake is ReentrancyGuard, Ownable {
+contract VestingStake is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // Info pertaining to staking contract
     address public stakedToken; // An ERC20 Token to be staked (i.e. Axial)
-    string public name; // New asset after staking (i.e. veAxial)
-    string public symbol; // New asset symbol after staking (i.e. veAXIAL)
-    //uint256 private AprDenominator = 1 days;  // Timeframe it takes for the user to accrue X tokens
+    string public name; // New asset after staking (i.e. sAxial)
+    string public symbol; // New asset symbol after staking (i.e. sAXIAL)
+    uint256 private interpolationGranularity = 1e18; // Note: ERC20.decimals() is for display and does not affect arithmetic!
 
     // Info pertaining to users
-    uint256 private totalTokensLocked; // Total balance of tokens users have locked
-    uint256 private totalTokensAccrued; // Total balance of accrued tokens currently awarded to users
-    uint256 private lastUserIndexUpdated; // Index of the user whose accrual was most recently updated
-    uint256 private timeStamp; // Last time Total Accrual was updated
     address[] private users; // An array containing all user addresses
-    mapping(address => AccrueVe) private locks; // A mapping of each users tokens staked
+    mapping(address => LockVe) private locks; // A mapping of each users lock
+    mapping(address => uint256) private lockedFunds; // A mapping of each users total deposited funds
+    mapping(address => uint256) private deferredFunds; // A mapping of vested funds the user wishes to leave unclaimed
 
-    struct AccrueVe {
-        uint256 accruedTokens; // Quantity of tokens awarded to the user at time of Timestamp
-        uint256 stakedTokens; // Quantity of tokens the user has staked
-        uint256 timeStamp; // Last time the accrual was updated
-        uint256 userIndex; // Index of user, used to manage iteration
-        bool initialized; // True if the user is staked
+    // Lock structure, only one of these is allowed per user
+    // A DELTA can be derived as the degree of interpolation between the start/end block:
+    // Delta = (end - now) / end - start
+    // This can be used to determine how much of our staked token is unlocked:
+    // currentAmountLocked = startingAmountLocked - (delta * startingAmountLocked)
+    struct LockVe {
+        uint256 startBlockTime;
+        uint256 endBlockTime;
+        uint256 startingAmountLocked;
+        bool initialized;
     }
 
     /// @notice Constructor
@@ -637,43 +639,72 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         symbol = _symbol;
     }
 
-    /// @notice Emitted when a user creates a new stake
+    /// @notice Emitted when a user stakes for the first time
     /// @param user Address of the user who staked
-    /// @param amount Quantity of tokens deposited
-    event userStaked(address indexed user, uint256 amount);
+    /// @param amount Quantity of tokens staked
+    /// @param duration Length in seconds of stake
+    event userStaked(address indexed user, uint256 amount, uint256 duration);
 
-    /// @notice Emitted when a user adds to their stake
+    /// @notice Emitted when a user extends and/or deposits into their existing stake
     /// @param user Address of the user who staked
-    /// @param amount Quantity of tokens deposited
-    event userRestaked(address indexed user, uint256 amount);
+    /// @param amount New total quantity of tokens in stake
+    /// @param duration New total length of stake
+    event userExtended(address indexed user, uint256 amount, uint256 duration);
 
-    /// @notice Emitted when a user withdraws their funds
-    /// @param user Address of the user who withdrew
-    /// @param amount Quantity of tokens withdrawn
-    /// @param accrued Quantity of accrued tokens lost
-    event userWithdrew(address indexed user, uint256 amount, uint256 accrued);
+    /// @notice Emitted when a user claims outstanding vested balance
+    /// @param user Address of the user who claimed
+    /// @param amount Quantity of tokens claimed
+    event userClaimed(address indexed user, uint256 amount);
 
-    /// @notice Get the number of tokens a user currently has staked
+    /// @notice Calculate the number of vested tokens a user has not claimed
     /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
-    /// @return Quantity of tokens which a user currently has staked
-    function getStaked(address _userAddr) public view returns (uint256) {
-        return locks[_userAddr].stakedTokens;
+    /// @return Quantity of tokens which have vested but are unclaimed by the specified user
+    function getUnclaimed(address _userAddr) public view returns (uint256) {
+        uint256 totalFundsDeposited = lockedFunds[_userAddr] + deferredFunds[_userAddr];
+        uint256 currentBalance = getBalance(_userAddr);
+        uint256 fundsToClaim = totalFundsDeposited - currentBalance;
+        return fundsToClaim;
     }
 
-    /// @notice Get the total number of tokens a user has accrued
-    /// @param _userAddr Address of any user to view the number of vested tokens they have not yet claimed
-    /// @return Quantity of tokens which a user has accrued over time
-    /// @dev Use this function to get the numerator for a users share of the rewards pool
-    function getAccrued(address _userAddr) public view returns (uint256) {
-        //return Locks[_userAddr].AccruedTokens;
-        return locks[_userAddr].accruedTokens + (locks[_userAddr].stakedTokens * (block.timestamp - locks[_userAddr].timeStamp));
+    /// @notice Calculate the number of tokens a user still has locked
+    /// @param _userAddr Address of any user to view the number of tokens they still have locked
+    /// @return Quantity of tokens the user has locked
+    function getBalance(address _userAddr) public view returns (uint256) {
+        LockVe memory usersLock = locks[_userAddr];
+
+        uint256 currentTimestamp = block.timestamp;
+        uint256 balance = 0;
+
+        if (usersLock.endBlockTime > currentTimestamp) {
+            uint256 granularDelta = ((usersLock.endBlockTime - currentTimestamp) * interpolationGranularity) / (usersLock.endBlockTime - usersLock.startBlockTime);
+            balance += (usersLock.startingAmountLocked * granularDelta) / interpolationGranularity;
+        }
+        return balance;
     }
 
-    /// @notice Get the total number of tokens accrued via this contract
-    /// @return Quantity of all tokens awarded by this contract
-    /// @dev Use this function to get the denominator for a users share of the rewards pool
-    function getTotalAccrued() public view returns (uint256) {
-        return totalTokensAccrued + (totalTokensLocked * (block.timestamp - timeStamp));
+    /// @notice This is an overload for getPower so that users can see the 'token' in their wallets
+    function balanceOf(address _account) external view returns (uint256) {
+        return getPower(_account);
+    }
+
+    /// @notice Calculate the number of governance tokens currently allocated to a user by this contract
+    /// @param _userAddr Address of any user to view the number of governance tokens currently awarded to them
+    /// @return Quantity of governance tokens allocated to the user
+    function getPower(address _userAddr) public view returns (uint256) {
+        LockVe memory usersLock = locks[_userAddr];
+
+        uint256 currentTimestamp = block.timestamp;
+        uint256 power = 0;
+
+        if (usersLock.endBlockTime > currentTimestamp) {
+            // let delta = elapsed / totalLocktinme
+            // let startingPower = duration / 2 years
+            // let power = delta * startingPower
+            uint256 startingAmountAwarded = ((usersLock.endBlockTime - usersLock.startBlockTime) * usersLock.startingAmountLocked) / 104 weeks;
+            uint256 granularDelta = ((usersLock.endBlockTime - currentTimestamp) * interpolationGranularity) / (usersLock.endBlockTime - usersLock.startBlockTime);
+            power += (startingAmountAwarded * granularDelta) / interpolationGranularity;
+        }
+        return power;
     }
 
     /// @notice Retrieve a list of all users who have ever staked
@@ -682,28 +713,21 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         return users;
     }
 
-    // Accrual is tokens locked * seconds
-    /// @notice Update the accrual for a specific user
-    /// @param _userAddr address of user to update
-    /// @dev This synchronizes a users accrual when their deposit amount changes
-    function _updateUsersAccrual(address _userAddr) private {
-        AccrueVe storage lock = locks[_userAddr];
-        uint256 blockTimestamp = block.timestamp;
-
-        uint256 accrual = (blockTimestamp - lock.timeStamp) * lock.stakedTokens;
-
-        lock.timeStamp = blockTimestamp;
-        lock.accruedTokens += accrual;
+    /// @notice Check if a user has ever created a Lock in this contract
+    /// @param _userAddr Address of any user to check
+    /// @dev This may be used by the web application to determine if the UI says "Create Lock" or "Add to Lock"
+    /// @return True if the user has ever created a lock
+    function isUserLocked(address _userAddr) public view returns (bool) {
+        LockVe memory usersLock = locks[_userAddr];
+        return usersLock.initialized;
     }
 
-    /// @notice Update the total accrual for all users
-    /// @dev This updates the value used as the denominator for a users accrual share
-    /// @dev This must always be called before changing the amount of tokens deposited in this contract
-    function _updateTotalAccrual() private {
-        uint256 currentTime = block.timestamp;
-        uint256 delta = currentTime - timeStamp;
-        totalTokensAccrued += totalTokensLocked * delta;
-        timeStamp = currentTime;
+    /// @notice View a users Lock
+    /// @param _userAddr Address of any user to view all Locks they have ever created
+    /// @dev This may be used by the web application for graphical illustration purposes
+    /// @return Users Lock in the format of the LockVe struct
+    function getLock(address _userAddr) public view returns (LockVe memory) {
+        return locks[_userAddr];
     }
 
     /// @notice Allow owner to reclaim tokens not matching the deposit token
@@ -718,64 +742,80 @@ contract AccruingStake is ReentrancyGuard, Ownable {
         IERC20(_token).safeTransfer(owner(), balanceOfToken);
     }
 
-    /// @notice Transfers deposited tokens back to their original owner
-    /// @notice This will reset the users accrual!
-    /// @dev This could be called by the web application via a button or some other means
-    function withdrawMyFunds() external nonReentrant {
+    /// @notice Transfers vested tokens back to their original owner
+    /// @notice It is up to the user to invoke this manually
+    /// @dev This will need to be called by the web application via a button or some other means
+    function claimMyFunds() external nonReentrant {
         address userAddr = msg.sender;
-        uint256 fundsToClaim = locks[userAddr].stakedTokens;
+        uint256 totalFundsDeposited = lockedFunds[userAddr] + deferredFunds[userAddr];
+        uint256 currentBalance = getBalance(userAddr);
+        uint256 fundsToClaim = totalFundsDeposited - currentBalance;
 
-        require(fundsToClaim > 0, "!funds");
         IERC20(stakedToken).safeTransfer(userAddr, fundsToClaim);
 
-        // decrement totals
-        _updateTotalAccrual();
-        totalTokensLocked -= fundsToClaim;
-        totalTokensAccrued -= locks[userAddr].accruedTokens;
+        lockedFunds[userAddr] = currentBalance;
+        deferredFunds[userAddr] = 0;
 
-        // Broadcast withdrawal
-        emit userWithdrew(userAddr, fundsToClaim, locks[userAddr].accruedTokens);
-
-        locks[userAddr].stakedTokens = 0;
-        locks[userAddr].accruedTokens = 0;
-        locks[userAddr].initialized = false;
-
-        // Fairly efficient way of removing user from list
-        uint256 lastUsersIndex = users.length - 1;
-        uint256 myIndex = locks[userAddr].userIndex;
-        locks[users[lastUsersIndex]].userIndex = myIndex;
-        users[myIndex] = users[lastUsersIndex];
-        users.pop();
+        emit userClaimed(userAddr, fundsToClaim);
     }
 
-    /// @notice Deposit tokens into the contract, adjusting accrual rate
-    /// @param _amount Number of tokens to deposit
-    function stake(uint256 _amount) external nonReentrant {
-        require(_amount > 0, "!amount");
+    /// @notice Create/extend the duration of the invoking users lock and/or deposit additional tokens into it
+    /// @param _duration Number of seconds the invoking user will extend their lock for
+    /// @param _amount Number of additional tokens to deposit into the lock
+    /// @param _deferUnclaimed If True, leaves any unclaimed vested balance in the staking contract
+    function stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed) public nonReentrant {
+        require(_duration > 0 || _amount > 0, "null");
 
+        // Retrieve lock the user may have already created
         address userAddr = msg.sender;
+        LockVe memory usersLock = locks[userAddr];
+
+        uint256 oldDurationRemaining = 0;
+
+        // Keep track of new user or pre-existing lockout period
+        if (!usersLock.initialized) {
+            users.push(userAddr);
+        } else if (block.timestamp < usersLock.endBlockTime) {
+            oldDurationRemaining = usersLock.endBlockTime - block.timestamp;
+        }
+
+        require (oldDurationRemaining + _duration <= 104 weeks, ">2 years");
 
         // Receive the users tokens
         require(IERC20(stakedToken).balanceOf(userAddr) >= _amount, "!balance");
         require(IERC20(stakedToken).allowance(userAddr, address(this)) >= _amount, "!approved");
-        IERC20(stakedToken).safeTransferFrom(userAddr, address(this), _amount);
+        IERC20(stakedToken).safeTransferFrom(userAddr,  address(this), _amount);
 
-        _updateTotalAccrual();
-        totalTokensLocked += _amount;
-
-        // Keep track of new users
-        if (!locks[userAddr].initialized) {
-            users.push(userAddr);
-            locks[userAddr].initialized = true;
-            locks[userAddr].timeStamp = block.timestamp; // begin accrual from time of initial deposit
-            locks[userAddr].userIndex = users.length - 1;
-            emit userStaked(userAddr, _amount);
+        // Account for balance / unclaimed funds
+        uint256 totalFundsDeposited = lockedFunds[userAddr];
+        uint256 oldBalance = getBalance(userAddr);
+        uint256 fundsUnclaimed = totalFundsDeposited - oldBalance;
+        if (!_deferUnclaimed) {
+            fundsUnclaimed += deferredFunds[userAddr];
+            IERC20(stakedToken).safeTransfer(userAddr, fundsUnclaimed);
+            deferredFunds[userAddr] = 0;
+            emit userClaimed(userAddr, fundsUnclaimed);
         } else {
-            _updateUsersAccrual(userAddr); // balance ledger before accrual rate is increased
-            emit userRestaked(userAddr, _amount);
+            deferredFunds[userAddr] += fundsUnclaimed;
         }
+        uint256 newTotalDeposit = oldBalance + _amount;
 
         // Update balance
-        locks[userAddr].stakedTokens += _amount;
+        lockedFunds[userAddr] = newTotalDeposit;
+
+        // Fill out updated LockVe struct
+        LockVe memory newLock;
+        newLock.startBlockTime = block.timestamp;
+        newLock.endBlockTime = newLock.startBlockTime + _duration + oldDurationRemaining;
+        newLock.startingAmountLocked = newTotalDeposit;
+        newLock.initialized = true;
+        locks[userAddr] = newLock;
+
+        // Events
+        if (oldDurationRemaining == 0) {
+            emit userStaked(userAddr, newTotalDeposit, newLock.endBlockTime - newLock.startBlockTime);
+        } else {
+            emit userExtended(userAddr, newTotalDeposit, newLock.endBlockTime - newLock.startBlockTime);
+        }
     }
 }

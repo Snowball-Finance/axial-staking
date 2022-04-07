@@ -10,7 +10,7 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "hardhat/console.sol";
+//import "hardhat/console.sol";
 
 interface IsAxial {
   function balanceOf(address _account) external view returns (uint256);
@@ -302,7 +302,6 @@ contract Governance is ReentrancyGuard, Ownable {
         }
 
         uint256 votes = sAXIAL.balanceOf(msg.sender);
-        console.log("User votes: ", votes);
 
         // user needs to have enough voting power to be allowed to propose
         require(
