@@ -148,8 +148,9 @@ contract AccruingStake is ReentrancyGuard, Ownable {
 
         // decrement totals
         _updateTotalAccrual();
+        uint256 tokensAccrued = getAccrued(userAddr);
         totalTokensLocked -= fundsToClaim;
-        totalTokensAccrued -= locks[userAddr].accruedTokens;
+        totalTokensAccrued -= tokensAccrued;
 
         // Broadcast withdrawal
         emit userWithdrew(userAddr, fundsToClaim, locks[userAddr].accruedTokens);

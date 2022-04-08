@@ -268,4 +268,21 @@ describe("AccruingStake", () => {
     console.log("Syncing %d users costs 1/%d AVAX or $%d", maxUsersPerBlock.toFixed(0), (1/syncCostPerBlockInAVAX).toFixed(0), syncCostPerBlockInUSD.toFixed(2))
   })
 
+  it.only("Withdrawing correctly impacts total accrual", async () => {
+    await axialToken.connect(alice).approve(stakingAc.address, "10")
+    await axialToken.connect(bob).approve(stakingAc.address, "100")
+
+    await stakingAc.connect(alice).stake(10)
+    await stakingAc.connect(bob).stake(100)
+
+    await increaseTimestamp(SECONDS_IN_A_YEAR)
+
+    let bobAccruedBefore = await stakingAc.getAccrued(bobAddr)
+    let totalAccruedBefore = await stakingAc.connect(bob).getTotalAccrued()
+    await stakingAc.connect(bob).withdrawMyFunds()
+    let totalAccruedAfter = await stakingAc.connect(bob).getTotalAccrued()
+    expect((totalAccruedBefore.sub(bobAccruedBefore).toNumber())).to.be.lessThanOrEqual(totalAccruedAfter.add(10).toNumber())
+    expect((totalAccruedBefore.sub(bobAccruedBefore).toNumber())).to.be.greaterThanOrEqual(totalAccruedAfter.sub(10).toNumber())
+  })
+
 })
