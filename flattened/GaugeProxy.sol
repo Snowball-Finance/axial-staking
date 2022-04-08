@@ -794,8 +794,9 @@ contract AccruingStake is ReentrancyGuard, Ownable {
 
         // decrement totals
         _updateTotalAccrual();
+        uint256 tokensAccrued = getAccrued(userAddr);
         totalTokensLocked -= fundsToClaim;
-        totalTokensAccrued -= locks[userAddr].accruedTokens;
+        totalTokensAccrued -= tokensAccrued;
 
         // Broadcast withdrawal
         emit userWithdrew(userAddr, fundsToClaim, locks[userAddr].accruedTokens);
@@ -2196,8 +2197,6 @@ contract GaugeProxy is ProtocolGovernance {
 
     /// @notice max time allowed to pass before distribution (6 hours)
     uint256 public constant DISTRIBUTION_DEADLINE = 21600;
-
-    uint256 public constant DUMMY_VAR = 0; // test
 
     uint256 public constant UINT256_MAX = 2**256-1;
     uint256 public pid = UINT256_MAX;
