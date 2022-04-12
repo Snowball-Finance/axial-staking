@@ -5,7 +5,7 @@ pragma solidity 0.8.9;
 /// @notice Interface for the MCAV3 contract that will control minting of AXIAL via MCAV2
 interface IMasterChefAxialV3 {
     /// @notice Deposit LP tokens to MCAV3 for AXIAL allocation.
-    function deposit(uint256 _pid, uint256 _amount) external;
+    function deposit(uint256 pid, uint256 amount) external;
 
     /// @notice Withdraw LP tokens from MCAV3
     function withdraw(uint256 pid, uint256 amount) external;

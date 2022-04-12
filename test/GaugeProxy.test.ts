@@ -22,6 +22,10 @@ let veAxial: ERC20TokenMock;
 let deployer: SignerWithAddress;
 let alice: SignerWithAddress;
 let bob: SignerWithAddress;
+let carol: SignerWithAddress;
+let dave: SignerWithAddress;
+
+const ALLOCATED_FOR_USERS = 100000;
 
 let testTokenAddress: string;
 
@@ -102,13 +106,20 @@ describe("Gauge Proxy:", function () {
       );
       expect(userTokenVotesAfter).to.eq(0);
     });
+
+    it.only("Rewards should be distributed to users based on their weights", async function() {
+      await stakeAndVote(alice, 100);
+      await stakeAndVote(bob, 100);
+      await gaugeProxy.connect(deployer).preDistribute();
+      await gaugeProxy.connect(deployer).distribute(0, 0);
+    });
   });
 });
 
 // Helper functions
 
 async function setupTest(): Promise<void> {
-  [deployer, alice, bob] = await ethers.getSigners();
+  [deployer, alice, bob, carol, dave] = await ethers.getSigners();
 
   // Deploy Axial
   axial = await new ERC20TokenMock__factory(deployer).deploy("Axial", "AXIAL");
@@ -136,8 +147,13 @@ async function setupTest(): Promise<void> {
   // Add gauge for fake token
   await gaugeProxy.connect(deployer).addGauge(testTokenAddress);
 
+  await gaugeProxy.connect(deployer).setPID(1);
+
   // Mint axial
-  await axial.connect(deployer).mint(alice.address, await axial.maxSupply());
+  await axial.connect(deployer).mint(alice.address, ALLOCATED_FOR_USERS);
+  await axial.connect(deployer).mint(bob.address, ALLOCATED_FOR_USERS);
+  await axial.connect(deployer).mint(carol.address, ALLOCATED_FOR_USERS);
+  await axial.connect(deployer).mint(dave.address, ALLOCATED_FOR_USERS);
 }
 
 async function stakeAndVote(
@@ -146,7 +162,7 @@ async function stakeAndVote(
 ): Promise<void> {
 
   const userBalanceBeforeStake = await axial.balanceOf(user.address);
-  expect(userBalanceBeforeStake).to.eq(await axial.maxSupply());
+  expect(userBalanceBeforeStake).to.eq(await ALLOCATED_FOR_USERS);
 
   // Approve max spend of users axial
   await axial.connect(user).approve(sAxial.address, await axial.maxSupply());
@@ -155,17 +171,17 @@ async function stakeAndVote(
   const powerBeforeStake = await sAxial.getPower(user.address);
   expect(powerBeforeStake).to.eq(0);
 
-  await sAxial.connect(user).stake(SECONDS_IN_A_YEAR, 100, false);
+  await sAxial.connect(user).stake(SECONDS_IN_A_YEAR, userBalanceBeforeStake, false);
 
   const userBalanceAfterStake = await axial.balanceOf(user.address);
-  expect(userBalanceAfterStake).to.eq(userBalanceBeforeStake.sub(100));
+  expect(userBalanceAfterStake).to.eq(userBalanceBeforeStake.sub(userBalanceBeforeStake));
 
   // Check user has some voting user
   const powerAfterStake = await sAxial.getPower(user.address);
   expect(powerAfterStake).to.gt(0);
 
   const tokenWeightBeforeVote = await gaugeProxy.weights(testTokenAddress);
-  expect(tokenWeightBeforeVote).to.eq(0);
+  // expect(tokenWeightBeforeVote).to.eq(0);
 
   const userTokenVotesBefore = await gaugeProxy.votes(
     user.address,
@@ -175,4 +191,7 @@ async function stakeAndVote(
 
   // Vote on gauge proxy for test token
   await gaugeProxy.connect(user).vote([testTokenAddress], [weight]);
+
+  const userTokenVotesAfter = await gaugeProxy.votes(user.address, testTokenAddress);
+  expect(userTokenVotesAfter.toNumber()).to.be.greaterThan(0);
 }

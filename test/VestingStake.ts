@@ -358,4 +358,22 @@ describe("VestingStake", () => {
     expect(users.length).to.eq(3)
   })
 
+  it.only("Re-staking does not affect unclaimed funds when deferring withdrawal", async() => {
+    await axialToken.connect(bob).approve(stakingVe.address, "100")
+    await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "50", false)
+
+    let previousAvailableForWithdraw = await stakingVe.getUnclaimed(bobAddr)
+    let availableForWithdraw = previousAvailableForWithdraw;
+    for (let i = 0; i < 51; ++i) {
+      await increaseTimestamp(SECONDS_IN_A_WEEK)
+      previousAvailableForWithdraw = availableForWithdraw
+      availableForWithdraw = await stakingVe.getUnclaimed(bobAddr)
+      console.log(availableForWithdraw.toNumber())
+      expect(previousAvailableForWithdraw.toNumber()).to.be.lessThanOrEqual(availableForWithdraw.toNumber())
+      if (i == 26) {
+        await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "50", true)
+      }
+    }
+  });
+
 })

@@ -268,7 +268,7 @@ describe("AccruingStake", () => {
     console.log("Syncing %d users costs 1/%d AVAX or $%d", maxUsersPerBlock.toFixed(0), (1/syncCostPerBlockInAVAX).toFixed(0), syncCostPerBlockInUSD.toFixed(2))
   })
 
-  it.only("Withdrawing correctly impacts total accrual", async () => {
+  it("Withdrawing correctly impacts total accrual", async () => {
     await axialToken.connect(alice).approve(stakingAc.address, "10")
     await axialToken.connect(bob).approve(stakingAc.address, "100")
 
