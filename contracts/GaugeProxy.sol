@@ -5,7 +5,7 @@ import {ProtocolGovernance} from "./libraries/ProtocolGovernance.sol";
 import {Strategist} from "./libraries/Strategist.sol";
 import {AccruingStake} from "./AccruingStake.sol";
 import {VestingStake} from "./VestingStake.sol";
-import {IMasterChefAxialV3} from "./interfaces/IMasterChefAxialV3.sol";
+import {IMasterChef} from "./interfaces/IMasterChef.sol";
 import {AxialDummyToken} from "./AxialDummyToken.sol";
 import {Gauge} from "./Gauge.sol";
 
@@ -22,10 +22,8 @@ contract GaugeProxy is ProtocolGovernance {
 
     // ==================== External Dependencies ==================== //
 
-    /// @notice Master Chef Axial V3 contract
-    IMasterChefAxialV3 public constant MCAV3 =
-        IMasterChefAxialV3(0x958C0d0baA8F220846d3966742D4Fb5edc5493D3);
-        //IMasterChefAxialV3(0x35225E5a6309a4823f900EeC047699ecFbE8d341);
+    /// @notice Master Chef Axial V2 contract
+    IMasterChef public MCAV2;
 
     /// @notice token for voting on Axial distribution to pools - SAXIAL
     VestingStake public immutable sAxial;
@@ -45,7 +43,7 @@ contract GaugeProxy is ProtocolGovernance {
     /// @notice max time allowed to pass before distribution (6 hours)
     uint256 public constant DISTRIBUTION_DEADLINE = 21600;
 
-    //uint256 public constant UINT256_MAX = 2**256-1;
+    //uint256 private constant UINT256_MAX = 2**256-1;
     //uint256 public pid = UINT256_MAX;
     uint256 public pid = 0;
     uint256 public totalWeight;
@@ -252,31 +250,39 @@ contract GaugeProxy is ProtocolGovernance {
         _tokens.push(_token);
     }
 
-    // ==================== MCAV3 Logic ==================== //
+    // ==================== MCAV2 Logic ==================== //
 
-    /// @notice Sets MCAV3 PID
+    /// @notice Sets new MCAV2 address.  Useful for debugging.
+    function setMasterChef(address _masterChef) external onlyGovernance {
+        //MCAV2 = IMasterChefAxialV3(_masterChef);
+        MCAV2 = IMasterChef(_masterChef);
+        pid = 0;
+        //pid = UINT256_MAX;
+    }
+
+    /// @notice Sets MCAV2 PID
     function setPID(uint256 _pid) external onlyGovernance {
         //require(pid == UINT256_MAX, "pid has already been set");
-        //require(_pid < UINT256_MAX, "invalid pid");
+        // require(_pid < UINT256_MAX, "invalid pid");
         require(pid == 0, "pid has already been set");
         require(_pid != 0, "invalid pid");
         pid = _pid;
     }
 
-    /// @notice Deposits Axial dummy token into MCAV3
+    /// @notice Deposits Axial dummy token into MCAV2
     function deposit() public {
         //require(pid < UINT256_MAX, "pid not initialized");
         require(pid != 0, "pid not initialized");
         uint256 _balance = axialDummyToken.balanceOf(address(this));
-        axialDummyToken.safeApprove(address(MCAV3), 0);
-        axialDummyToken.safeApprove(address(MCAV3), _balance);
-        MCAV3.deposit(pid, _balance);
+        axialDummyToken.safeApprove(address(MCAV2), 0);
+        axialDummyToken.safeApprove(address(MCAV2), _balance);
+        MCAV2.deposit(pid, _balance);
     }
 
-    /// @notice Collects AXIAL from MCAV3 for distribution
+    /// @notice Collects AXIAL from MCAV2 for distribution
     function collect() public {
-        (uint256 _locked, ) = MCAV3.userInfo(pid, address(this));
-        MCAV3.withdraw(pid, _locked);
+        (uint256 _locked, ) = MCAV2.userInfo(pid, address(this));
+        MCAV2.withdraw(pid, _locked);
         deposit();
     }
 

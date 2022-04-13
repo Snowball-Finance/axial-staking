@@ -265,10 +265,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         }
     }
 
+    /// @notice claims specific reward indices
+    function claimRewards(uint256[] calldata tokenIndices) public {
+        for (uint256 i = 0; i < tokenIndices.length; ++i) {
+            getReward(tokenIndices[i]);
+        }
+    }
+
     /// @notice withdraw deposited pool tokens and claim reward tokens
     function exit() external {
         _withdraw(_balances[msg.sender]);
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
+        for (uint256 i = 0; i < rewardTokens.length; ++i) {
             getReward(i);
         }
     }

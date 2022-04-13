@@ -358,7 +358,7 @@ describe("VestingStake", () => {
     expect(users.length).to.eq(3)
   })
 
-  it.only("Re-staking does not affect unclaimed funds when deferring withdrawal", async() => {
+  it("Re-staking does not affect unclaimed funds when deferring withdrawal", async() => {
     await axialToken.connect(bob).approve(stakingVe.address, "100")
     await stakingVe.connect(bob).stake(SECONDS_IN_A_YEAR, "50", false)
 
