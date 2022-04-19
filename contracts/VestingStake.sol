@@ -167,12 +167,14 @@ contract VestingStake is ReentrancyGuard, Ownable {
     function grant(uint256 _amount, address _userAddr) public nonReentrant {
         // Keep track of new user or pre-existing lockout period
         if (!usersLock.Initialized) {
+            require(msg.sender == owner, "User does not have a lock");
             _stake(104 weeks, _amount, true, _userAddr, msg.sender);
         } else {
             _stake(0, _amount, true, _userAddr, msg.sender);
         }
-        
     }
+
+    function 
 
     /// @notice Create/extend the duration of the invoking users lock and/or deposit additional tokens into it
     /// @param _duration Number of seconds the invoking user will extend their lock for
