@@ -70,10 +70,10 @@ contract EquityStake is Ownable {
     /// @dev Always ensure the _token is legitimate before calling this
     /// @dev A bad token can mimic safetransfer or balanceof with a nocive function
     /// @dev If tokens were accidentally sent directly to the contract they can also be removed
-    function ownerRemoveNonDepositToken(address _token) public nonReentrant onlyOwner {
+    function ownerRemoveNonDepositToken(address _token) public onlyOwner {
         uint256 balanceOfToken = IERC20(_token).balanceOf(address(this));
-        require(stakedTokens[_token] < balanceOfToken, "Token was not accidentally sent to this contract");
-        uint256 toWithdraw = balanceOfToken - stakedTokens[_token];
+        require(numTokens[_token] < balanceOfToken, "Token was not accidentally sent to this contract");
+        uint256 toWithdraw = balanceOfToken - numTokens[_token];
         require(toWithdraw > 0, "!balance");
         IERC20(_token).safeTransfer(owner(), toWithdraw);
     }

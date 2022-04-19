@@ -307,6 +307,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         external
         updateReward(address(0))
     {
+        console.log("notifyreward");
         IERC20(rewardTokens[tokenIndex]).safeTransferFrom(
             gaugeProxy,
             address(this),
