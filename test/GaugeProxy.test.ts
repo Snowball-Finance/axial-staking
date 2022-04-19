@@ -4,6 +4,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { BigNumberish, Signer, Contract } from "ethers";
 import { ethers, hardhatArguments, network } from "hardhat";
+import {increaseTime} from "./utils";
 import {
   ERC20TokenMock,
   ERC20TokenMock__factory,
@@ -12,16 +13,17 @@ import {
   Gauge,
   StakedAxialToken,
   StakedAxialToken__factory,
+  AccruingStake,
+  AccruingStake__factory,
   IMasterChef,
 } from "../typechain";
 import { SECONDS_IN_A_YEAR } from "./constants";
-import { getContractFactory } from "@nomiclabs/hardhat-ethers/types";
 
 let masterChef: Contract;
 let gaugeProxy: GaugeProxy;
 let axial: ERC20TokenMock;
 let sAxial: StakedAxialToken;
-let veAxial: ERC20TokenMock;
+let veAxial: AccruingStake;
 let testToken: ERC20TokenMock;
 const masterChefaddr = "0x3fae9b2637dbeb6cc570784ba886145fa5f2c0f6";
 let poolID = 0;
@@ -140,18 +142,65 @@ describe("Gauge Proxy:", function () {
       await gaugeProxy.connect(deployer).distribute(0, numGauges);
 
       let tokens = await gaugeProxy.connect(alice).tokens();
-      let indexArray = [];
 
+      let rewardToken1 = await new ERC20TokenMock__factory(dave).deploy("rewardToken1", "REWARD1");
+      let rewardToken2 = await new ERC20TokenMock__factory(dave).deploy("rewardToken2", "REWARD2");
+      let rewardToken3 = await new ERC20TokenMock__factory(dave).deploy("rewardToken3", "REWARD3");
+      let rewardToken4 = await new ERC20TokenMock__factory(dave).deploy("rewardToken4", "REWARD4");
+      await rewardToken1.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
+      await rewardToken2.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
+      await rewardToken3.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
+      await rewardToken4.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
 
       for (let i = 0; i < numGauges.toNumber(); ++i) {
-        indexArray.push(i);
+        let indexArray = [];
         let gaugeAddr = await gaugeProxy.getGauge(tokens[i]);
-        let gauge = await ethers.getContractAt("Gauge", gaugeAddr, alice);
+        let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
         console.log("gaugeAddr=", gaugeAddr);
+
+        await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken4.address, dave.address);
+
+        await gauge.connect(dave).setTokenRewardRate(rewardToken1.address, 100);
+        await gauge.connect(dave).setTokenRewardRate(rewardToken2.address, 100);
+        await gauge.connect(dave).setTokenRewardRate(rewardToken3.address, 100);
+        await gauge.connect(dave).setTokenRewardRate(rewardToken4.address, 100);
+
+        await rewardToken1.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
+        await rewardToken2.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
+        await rewardToken3.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
+        await rewardToken4.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
+        await rewardToken1.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken2.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken3.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken4.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
+
         let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
-        console.log("rewardTokens=", rewardTokens);
+        console.log("rewardTokens=", rewardTokens.toNumber());
+
+      await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+      await gauge.connect(alice).depositAll();
+
+      await increaseTime(SECONDS_IN_A_YEAR);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      for (let i = 0; i < rewardTokens.toNumber(); ++i) {
+        indexArray.push(i);
       }
-      //await gaugeProxy.connect(alice).collect()
+
+      await gauge.connect(alice).claimRewards(indexArray);
+
+      let balances = [await rewardToken1.balanceOf(alice.address),
+                      await rewardToken2.balanceOf(alice.address),
+                      await rewardToken3.balanceOf(alice.address),
+                      await rewardToken4.balanceOf(alice.address)];
+      console.log(balances);
+    }
+
     });
   });
 });
@@ -168,9 +217,11 @@ async function setupTest(): Promise<void> {
   sAxial = await new StakedAxialToken__factory(deployer).deploy(axial.address);
 
   // Deploy veAxial
-  veAxial = await new ERC20TokenMock__factory(deployer).deploy(
+  veAxial = await new AccruingStake__factory(deployer).deploy(
+    axial.address,
     "veAxial",
-    "veAxial"
+    "veAxial",
+    deployer.address
   );
 
   // Deploy gauge proxy
@@ -229,6 +280,12 @@ async function setupTest(): Promise<void> {
   await axial.connect(deployer).mint(bob.address, ALLOCATED_FOR_USERS);
   await axial.connect(deployer).mint(carol.address, ALLOCATED_FOR_USERS);
   await axial.connect(deployer).mint(dave.address, ALLOCATED_FOR_USERS);
+
+  // Give out some pool tokens
+  await testToken.connect(deployer).mint(alice.address, ALLOCATED_FOR_USERS);
+  await testToken.connect(deployer).mint(bob.address, ALLOCATED_FOR_USERS);
+  await testToken.connect(deployer).mint(carol.address, ALLOCATED_FOR_USERS);
+  await testToken.connect(deployer).mint(dave.address, ALLOCATED_FOR_USERS);
 }
 
 async function stakeAndVote(
