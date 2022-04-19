@@ -158,10 +158,32 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @param _amount Number of additional tokens to deposit into the lock
     /// @param _deferUnclaimed If True, leaves any unclaimed vested balance in the staking contract
     function stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed) public nonReentrant {
+        _stake(_duration, _amount, _deferUnclaimed, msg.sender);
+    }
+
+    /// @notice Deposit additional tokens into another users sAXIAL account
+    /// @param _amount Number of additional tokens to deposit into the lock
+    /// @param _userAddr Address of the user to deposit tokens into
+    function grant(uint256 _amount, address _userAddr) public nonReentrant {
+        // Keep track of new user or pre-existing lockout period
+        if (!usersLock.Initialized) {
+            _stake(104 weeks, _amount, true, msg.sender);
+        } else {
+            _stake(0, _amount, true, msg.sender);
+        }
+        
+    }
+
+    /// @notice Create/extend the duration of the invoking users lock and/or deposit additional tokens into it
+    /// @param _duration Number of seconds the invoking user will extend their lock for
+    /// @param _amount Number of additional tokens to deposit into the lock
+    /// @param _deferUnclaimed If True, leaves any unclaimed vested balance in the staking contract
+    /// @param _userAddr Address of the user to deposit tokens into
+    function _stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed, address _userAddr) internal nonReentrant {
         require(_duration > 0 || _amount > 0, "null");
 
         // Retrieve lock the user may have already created
-        address userAddr = msg.sender;
+        address userAddr = _userAddr;
         LockVe memory usersLock = Locks[userAddr];
 
         uint256 oldDurationRemaining = 0;
