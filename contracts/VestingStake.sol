@@ -158,7 +158,7 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @param _amount Number of additional tokens to deposit into the lock
     /// @param _deferUnclaimed If True, leaves any unclaimed vested balance in the staking contract
     function stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed) public nonReentrant {
-        _stake(_duration, _amount, _deferUnclaimed, msg.sender);
+        _stake(_duration, _amount, _deferUnclaimed, msg.sender, msg.sender);
     }
 
     /// @notice Deposit additional tokens into another users sAXIAL account
@@ -167,9 +167,9 @@ contract VestingStake is ReentrancyGuard, Ownable {
     function grant(uint256 _amount, address _userAddr) public nonReentrant {
         // Keep track of new user or pre-existing lockout period
         if (!usersLock.Initialized) {
-            _stake(104 weeks, _amount, true, msg.sender);
+            _stake(104 weeks, _amount, true, _userAddr, msg.sender);
         } else {
-            _stake(0, _amount, true, msg.sender);
+            _stake(0, _amount, true, _userAddr, msg.sender);
         }
         
     }
@@ -178,44 +178,44 @@ contract VestingStake is ReentrancyGuard, Ownable {
     /// @param _duration Number of seconds the invoking user will extend their lock for
     /// @param _amount Number of additional tokens to deposit into the lock
     /// @param _deferUnclaimed If True, leaves any unclaimed vested balance in the staking contract
-    /// @param _userAddr Address of the user to deposit tokens into
-    function _stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed, address _userAddr) internal nonReentrant {
+    /// @param _userAddr Address of the user to deposit tokens for
+    /// @param _senderAddr Address of the user to send deposit tokens from
+    function _stake(uint256 _duration, uint256 _amount, bool _deferUnclaimed, address _userAddr, address _senderAddr) internal nonReentrant {
         require(_duration > 0 || _amount > 0, "null");
 
         // Retrieve lock the user may have already created
-        address userAddr = _userAddr;
-        LockVe memory usersLock = Locks[userAddr];
+        LockVe memory usersLock = Locks[_userAddr];
 
         uint256 oldDurationRemaining = 0;
 
         // Keep track of new user or pre-existing lockout period
         if (!usersLock.Initialized) {
-            Users.push(userAddr);
+            Users.push(_userAddr);
         } else if (block.timestamp < usersLock.EndBlockTime) {
             oldDurationRemaining = usersLock.EndBlockTime - block.timestamp;
         }
 
         require (oldDurationRemaining + _duration <= 104 weeks, ">2 years");
 
-        // Receive the users tokens
-        require(IERC20(StakedToken).balanceOf(userAddr) >= _amount, "!balance");
-        IERC20(StakedToken).safeTransferFrom(userAddr,  address(this), _amount);
+        // Receive the sender's tokens
+        require(IERC20(StakedToken).balanceOf(_senderAddr) >= _amount, "!balance");
+        IERC20(StakedToken).safeTransferFrom(_senderAddr,  address(this), _amount);
 
         // Account for balance / unclaimed funds
-        uint256 totalFundsDeposited = LockedFunds[userAddr];
-        uint256 oldBalance = getBalance(userAddr);
+        uint256 totalFundsDeposited = LockedFunds[_userAddr];
+        uint256 oldBalance = getBalance(_userAddr);
         uint256 fundsUnclaimed = totalFundsDeposited - oldBalance;
         if (!_deferUnclaimed) {
-            fundsUnclaimed += DeferredFunds[userAddr];
-            IERC20(StakedToken).safeTransfer(userAddr, fundsUnclaimed);
-            DeferredFunds[userAddr] = 0;
+            fundsUnclaimed += DeferredFunds[_userAddr];
+            IERC20(StakedToken).safeTransfer(_userAddr, fundsUnclaimed);
+            DeferredFunds[_userAddr] = 0;
         } else {
-            DeferredFunds[userAddr] += fundsUnclaimed;
+            DeferredFunds[_userAddr] += fundsUnclaimed;
         }
         uint256 newTotalDeposit = oldBalance + _amount;
 
         // Update balance
-        LockedFunds[userAddr] = newTotalDeposit;
+        LockedFunds[_userAddr] = newTotalDeposit;
 
         // Fill out updated LockVe struct
         LockVe memory newLock;
@@ -223,6 +223,6 @@ contract VestingStake is ReentrancyGuard, Ownable {
         newLock.EndBlockTime = newLock.StartBlockTime + _duration + oldDurationRemaining;
         newLock.StartingAmountLocked = newTotalDeposit;
         newLock.Initialized = true;
-        Locks[userAddr] = newLock;
+        Locks[_userAddr] = newLock;
     }
 }
