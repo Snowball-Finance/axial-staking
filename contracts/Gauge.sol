@@ -11,6 +11,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
+import "hardhat/console.sol";
+
 contract Gauge is ProtocolGovernance, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -46,6 +48,8 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     /// @dev token => rate
     mapping(address => uint256) public rewardRates;
     mapping(address => uint256) public rewardPerTokenStored;
+    /// @dev token => partner
+    mapping(address => address) public tokenPartners;
 
     uint256 public lastUpdateTime;
 
@@ -104,7 +108,8 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     /// @notice adding a reward token to our array
     /// @param tokenAddress Reward token to be added to our rewardTokens array
-    function addRewardToken(address tokenAddress)
+    /// @param partnerAddress Address of partner who has permission to set the token reward rate
+    function addRewardToken(address tokenAddress, address partnerAddress)
         public
         onlyGovernance
         validAddress(tokenAddress)
@@ -112,6 +117,15 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // adding a new reward token to the array
         rewardTokens.push(tokenAddress);
         rewardRates[tokenAddress] = 0;
+        tokenPartners[tokenAddress] = partnerAddress;
+    }
+
+    /// @notice allow partner to set the reward rate of a token they control
+    /// @param tokenAddress Reward token to set the rate of
+    /// @param rate Desired reward rate
+    function setTokenRewardRate(address tokenAddress, uint256 rate) external {
+        require(tokenPartners[tokenAddress] == msg.sender, "!partner");
+        rewardRates[tokenAddress] = rate;
     }
 
     /// @notice returns the amount of reward tokens for the gauge
@@ -123,10 +137,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     /// @dev (e.g. how many teddy or axial is received per AC4D token)
     function rewardPerToken(uint256 tokenIndex) public view returns (uint256) {
         if (_totalSupply == 0) {
+            console.log("!_totalSupply");
             return rewardPerTokenStored[rewardTokens[tokenIndex]];
         }
-
+        console.log("rPTS=", rewardPerTokenStored[rewardTokens[tokenIndex]]);
+        console.log("lTRA=", lastTimeRewardApplicable());
+        console.log("lUT=", lastUpdateTime);
+        console.log("rR=", rewardRates[rewardTokens[tokenIndex]]);
+        console.log("/dS=", derivedSupply);
+        console.log("...=", rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[rewardTokens[tokenIndex]]).mul(1e18).div(derivedSupply)));
         // rPTS + (lTRA - lUT * rR * 1e18 / dS)
+
         return rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[rewardTokens[tokenIndex]]).mul(1e18).div(derivedSupply));
     }
 
@@ -203,6 +224,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         nonReentrant
         updateReward(account)
     {
+        console.log("deposit");
         require(amount > 0, "Cannot stake 0");
         poolToken.safeTransferFrom(account, address(this), amount);
         _totalSupply = _totalSupply.add(amount);
@@ -280,6 +302,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         }
     }
 
+    // TODO: Chesterton's fence, see if this function is being used anywhere
     function notifyReward(uint256 reward, uint256 tokenIndex)
         external
         updateReward(address(0))
