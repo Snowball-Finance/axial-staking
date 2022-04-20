@@ -34,7 +34,8 @@ let bob: SignerWithAddress;
 let carol: SignerWithAddress;
 let dave: SignerWithAddress;
 
-const ALLOCATED_FOR_USERS = 100000;
+const ALLOCATED_FOR_USERS = 5000000;
+const SECONDS_IN_A_WEEK = 60 * 60 * 24 * 7;
 
 let testTokenAddress: string;
 
@@ -163,19 +164,18 @@ describe("Gauge Proxy:", function () {
         await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken4.address, dave.address);
 
-        await gauge.connect(dave).setTokenRewardRate(rewardToken1.address, 100);
-        await gauge.connect(dave).setTokenRewardRate(rewardToken2.address, 100);
-        await gauge.connect(dave).setTokenRewardRate(rewardToken3.address, 100);
-        await gauge.connect(dave).setTokenRewardRate(rewardToken4.address, 100);
+        await rewardToken1.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken2.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken3.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken4.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
 
-        await rewardToken1.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
-        await rewardToken2.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
-        await rewardToken3.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
-        await rewardToken4.connect(dave).approve(dave.address, ALLOCATED_FOR_USERS);
-        await rewardToken1.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken2.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken3.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken4.connect(dave).transfer(gaugeAddr, ALLOCATED_FOR_USERS);
+        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken1.address);
+        //await increaseTime(60);
+        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken2.address);
+        //await increaseTime(60);
+        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken3.address);
+        //await increaseTime(60);
+        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken4.address);
 
         let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
         console.log("rewardTokens=", rewardTokens.toNumber());
@@ -198,7 +198,23 @@ describe("Gauge Proxy:", function () {
                       await rewardToken2.balanceOf(alice.address),
                       await rewardToken3.balanceOf(alice.address),
                       await rewardToken4.balanceOf(alice.address)];
+      console.log(rewardToken1.address);
+      console.log(rewardToken2.address);
+      console.log(rewardToken3.address);
+      console.log(rewardToken4.address);
       console.log(balances);
+
+      await increaseTime(SECONDS_IN_A_YEAR);
+      //await gaugeProxy.connect(deployer).preDistribute();
+      //await gaugeProxy.connect(deployer).distribute(0, numGauges);
+      await gauge.connect(alice).claimRewards(indexArray);
+      balances = [await rewardToken1.balanceOf(alice.address),
+        await rewardToken2.balanceOf(alice.address),
+        await rewardToken3.balanceOf(alice.address),
+        await rewardToken4.balanceOf(alice.address)];
+
+      console.log(balances);
+
     }
 
     });
