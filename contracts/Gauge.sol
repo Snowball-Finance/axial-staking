@@ -44,14 +44,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     address public gaugeProxy;
     uint256 public constant DURATION = 7 days;
 
-    uint256 public periodFinish = 0;
+    //uint256 public periodFinish = 0;
+    mapping(address => uint256) public periodFinish; // Might need to track this per reward token
+
     /// @dev token => rate
     mapping(address => uint256) public rewardRates;
     mapping(address => uint256) public rewardPerTokenStored;
     /// @dev token => partner
     mapping(address => address) public tokenPartners;
 
-    uint256 public lastUpdateTime;
+    //uint256 public lastUpdateTime;
+    mapping(address => uint256) public lastUpdateTime; // Might need to track this per reward token
 
     /// @dev user => token => amount
     mapping(address => mapping(address => uint256))
@@ -68,8 +71,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     modifier updateReward(address account) {
         for (uint256 i = 0; i < rewardTokens.length; i++) {
+            //console.log("Updating reward token", rewardTokens[i]);
             rewardPerTokenStored[rewardTokens[i]] = rewardPerToken(i);
-            lastUpdateTime = lastTimeRewardApplicable();
+            //lastUpdateTime = lastTimeRewardApplicable();
+            lastUpdateTime[rewardTokens[i]] = lastTimeRewardApplicable(rewardTokens[i]);
             if (account != address(0)) {
                 rewards[account][rewardTokens[i]] = earned(account, i);
                 userRewardPerTokenPaid[account][
@@ -120,14 +125,6 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         tokenPartners[tokenAddress] = partnerAddress;
     }
 
-    /// @notice allow partner to set the reward rate of a token they control
-    /// @param tokenAddress Reward token to set the rate of
-    /// @param rate Desired reward rate
-    function setTokenRewardRate(address tokenAddress, uint256 rate) external {
-        require(tokenPartners[tokenAddress] == msg.sender, "!partner");
-        rewardRates[tokenAddress] = rate;
-    }
-
     /// @notice returns the amount of reward tokens for the gauge
     function getNumRewardTokens() public view returns (uint256) {
         return rewardTokens.length;
@@ -136,19 +133,27 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     /// @notice return how many of our reward tokens is the user receiving per lp token
     /// @dev (e.g. how many teddy or axial is received per AC4D token)
     function rewardPerToken(uint256 tokenIndex) public view returns (uint256) {
-        if (_totalSupply == 0) {
-            console.log("!_totalSupply");
+        if (_totalSupply == 0) { // todo, does this need to be made per token?
+            //console.log("!_totalSupply");
             return rewardPerTokenStored[rewardTokens[tokenIndex]];
         }
-        console.log("rPTS=", rewardPerTokenStored[rewardTokens[tokenIndex]]);
-        console.log("lTRA=", lastTimeRewardApplicable());
-        console.log("lUT=", lastUpdateTime);
-        console.log("rR=", rewardRates[rewardTokens[tokenIndex]]);
-        console.log("/dS=", derivedSupply);
-        console.log("...=", rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[rewardTokens[tokenIndex]]).mul(1e18).div(derivedSupply)));
+
+        address token = rewardTokens[tokenIndex];
+
+        //if (tokenIndex == 2) {
+        //     console.log(rewardTokens[tokenIndex]);
+        //     console.log("rPTS=", rewardPerTokenStored[rewardTokens[tokenIndex]]);
+        //     console.log("lTRA=", lastTimeRewardApplicable(token));
+        //     console.log("lUT=", lastUpdateTime[token]);
+        //     console.log("rR=", rewardRates[token]);
+        //     console.log("/dS=", derivedSupply);
+        //     console.log("...=", rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply)));
+        // //}
         // rPTS + (lTRA - lUT * rR * 1e18 / dS)
 
-        return rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[rewardTokens[tokenIndex]]).mul(1e18).div(derivedSupply));
+        // TODO: does derivedSupply also need to be made per token?
+
+        return rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply));
     }
 
     /// @notice getting the reward to be received for each reward's respective staking period
@@ -167,6 +172,13 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         returns (uint256)
     {
         // x = dB * ( rPT - uRPTP ) / 1e18 + r 
+        //if (tokenIndex == 2) {
+            // console.log(rewardTokens[tokenIndex]);
+            // console.log("dB=", derivedBalances[account]);
+            // console.log("rPT=", rewardPerToken(tokenIndex));
+            // console.log("uRPTP=", userRewardPerTokenPaid[account][rewardTokens[tokenIndex]]);
+            // console.log("r=", rewards[account][rewardTokens[tokenIndex]]);
+        //}
         return derivedBalances[account].mul(rewardPerToken(tokenIndex).sub(userRewardPerTokenPaid[account][rewardTokens[tokenIndex]])).div(1e18).add(rewards[account][rewardTokens[tokenIndex]]);
     }
 
@@ -186,8 +198,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         return _balances[account];
     }
 
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return Math.min(block.timestamp, periodFinish);
+    //function lastTimeRewardApplicable() public view returns (uint256) {
+    function lastTimeRewardApplicable(address _token) public view returns (uint256) {
+        //return Math.min(block.timestamp, periodFinish);
+        return Math.min(block.timestamp, periodFinish[_token]);
     }
 
     /// @notice returns boost factor for specified account
@@ -224,7 +238,6 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         nonReentrant
         updateReward(account)
     {
-        console.log("deposit");
         require(amount > 0, "Cannot stake 0");
         poolToken.safeTransferFrom(account, address(this), amount);
         _totalSupply = _totalSupply.add(amount);
@@ -294,6 +307,13 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         }
     }
 
+    /// @notice claims all rewards
+    function claimAllRewards() public {
+        for (uint256 i = 0; i < rewardTokens.length; ++i) {
+            getReward(i);
+        }
+    }
+
     /// @notice withdraw deposited pool tokens and claim reward tokens
     function exit() external {
         _withdraw(_balances[msg.sender]);
@@ -303,24 +323,27 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     }
 
     // TODO: Chesterton's fence, see if this function is being used anywhere
-    function notifyReward(uint256 reward, uint256 tokenIndex)
+    function notifyReward(uint256 reward, address tokenAddress)
         external
         updateReward(address(0))
     {
-        console.log("notifyreward");
-        IERC20(rewardTokens[tokenIndex]).safeTransferFrom(
-            gaugeProxy,
+        address userAddr = msg.sender;
+        require (tokenPartners[tokenAddress] == userAddr, "You do not have the right");
+        IERC20(tokenAddress).safeTransferFrom(
+            msg.sender,
             address(this),
             reward
         );
-        if (block.timestamp >= periodFinish) {
-            rewardRates[rewardTokens[tokenIndex]] = reward.div(DURATION);
+        //if (block.timestamp >= periodFinish) {
+        if (block.timestamp >= periodFinish[tokenAddress]) {
+            rewardRates[tokenAddress] = reward.div(DURATION);
         } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
+            //uint256 remaining = periodFinish.sub(block.timestamp);
+            uint256 remaining = periodFinish[tokenAddress].sub(block.timestamp);
             uint256 leftover = remaining.mul(
-                rewardRates[rewardTokens[tokenIndex]]
+                rewardRates[tokenAddress]
             );
-            rewardRates[rewardTokens[tokenIndex]] = reward.add(leftover).div(
+            rewardRates[tokenAddress] = reward.add(leftover).div(
                 DURATION
             );
         }
@@ -329,17 +352,22 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // This keeps the reward rate in the right range, preventing overflows due to
         // very high values of rewardRate in the earned and rewardsPerToken functions;
         // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
-        uint256 balance = IERC20(rewardTokens[tokenIndex]).balanceOf(
+        uint256 balance = IERC20(tokenAddress).balanceOf(
             address(this)
         );
+        // console.log("balance=", balance);
+        // console.log("rewardRate=", rewardRates[tokenAddress]);
+        // console.log("balance/duration=", balance.div(DURATION));
         require(
-            rewardRates[rewardTokens[tokenIndex]] <= balance.div(DURATION),
-            "Provided reward too high"
+            rewardRates[tokenAddress] <= balance.div(DURATION),
+            "Provided reward too high for reward token"
         );
 
-        lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp.add(DURATION);
-        emit RewardAdded(reward, rewardTokens[tokenIndex]);
+        //lastUpdateTime = block.timestamp;
+        lastUpdateTime[tokenAddress] = block.timestamp;
+        //periodFinish = block.timestamp.add(DURATION);
+        periodFinish[tokenAddress] = block.timestamp.add(DURATION);
+        emit RewardAdded(reward, tokenAddress);
     }
 
     /// @notice only called by the GaugeProxy and so only deals in the native token
@@ -353,10 +381,12 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
             address(this),
             reward
         );
-        if (block.timestamp >= periodFinish) {
+        //if (block.timestamp >= periodFinish) {
+        if (block.timestamp >= periodFinish[rewardTokens[0]]) {
             rewardRates[rewardTokens[0]] = reward.div(DURATION);
         } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
+            //uint256 remaining = periodFinish.sub(block.timestamp);
+            uint256 remaining = periodFinish[rewardTokens[0]].sub(block.timestamp);
             uint256 leftover = remaining.mul(rewardRates[rewardTokens[0]]);
             rewardRates[rewardTokens[0]] = reward.add(leftover).div(DURATION);
         }
@@ -371,8 +401,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
             "Provided reward too high"
         );
 
-        lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp.add(DURATION);
+        //lastUpdateTime = block.timestamp;
+        lastUpdateTime[rewardTokens[0]] = block.timestamp;
+        //periodFinish = block.timestamp.add(DURATION);
+        periodFinish[rewardTokens[0]] = block.timestamp.add(DURATION);
         emit RewardAdded(reward, rewardTokens[0]);
     }
 }

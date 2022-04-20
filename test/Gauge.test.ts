@@ -41,7 +41,7 @@ describe.only("Gauge:", function () {
     const rewardTokensBefore = await testGauge.getNumRewardTokens();
     expect(rewardTokensBefore).to.eq(0);
 
-    await testGauge.connect(deployer).addRewardToken(testRewardToken.address);
+    await testGauge.connect(deployer).addRewardToken(testRewardToken.address, deployer.address);
 
     const rewardTokensAfter = await testGauge.getNumRewardTokens();
     expect(rewardTokensAfter).to.eq(1);
@@ -90,13 +90,13 @@ describe.only("Gauge:", function () {
     expect(totalSupplyAfter).to.eq(0);
   });
 
-  it.skip("Should boost users balance when holding veAxial", async function () {
+  it("Should boost users balance when holding veAxial", async function () {
     await testPoolToken.connect(deployer).mint(user.address, 100);
 
     await veAxial.connect(deployer).stake(900);
 
     // Add reward token
-    await testGauge.connect(deployer).addRewardToken(testRewardToken.address);
+    await testGauge.connect(deployer).addRewardToken(testRewardToken.address, deployer.address);
 
     const userBalanceBefore = await testPoolToken.balanceOf(user.address);
     expect(userBalanceBefore).to.eq(100);
