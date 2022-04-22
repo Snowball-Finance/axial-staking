@@ -181,7 +181,7 @@ describe("Gauge Proxy:", function () {
         console.log("rewardTokens=", rewardTokens.toNumber());
 
       await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
-      await gauge.connect(alice).depositAll();
+      //await gauge.connect(alice).depositAll();
 
       await increaseTime(SECONDS_IN_A_YEAR);
 

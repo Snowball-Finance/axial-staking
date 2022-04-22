@@ -102,6 +102,9 @@ describe("Governance", () => {
 
     let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts(labels, targets, values, data);
     let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test Title", "Test Metadata", SECONDS_IN_A_WEEK, true);
+
+    console.log(executionContexts);
+    console.log(metaData);
     await voteGovernance.connect(alice).propose(metaData, executionContexts);
   })
 
