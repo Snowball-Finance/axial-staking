@@ -32,14 +32,14 @@ contract Governance is ReentrancyGuard, Ownable {
     uint256 public constant EXPIRATION_PERIOD = 14 days;
 
     /// @notice The required minimum number of votes in support of a proposal for it to succeed
-    uint256 public quorumVotes = 300_000;
-    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000;
-    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000;
+    uint256 public quorumVotes = 300_000e18;
+    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000e18;
+    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000e18;
 
     /// @notice The minimum number of votes required for an account to create a proposal
-    uint256 public proposalThreshold = 100_000;
-    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000;
-    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000;
+    uint256 public proposalThreshold = 100_000e18;
+    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000e18;
+    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000e18;
 
     /// @notice The total number of proposals
     uint256 public proposalCount;
