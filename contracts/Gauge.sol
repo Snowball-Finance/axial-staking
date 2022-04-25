@@ -13,7 +13,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 
 import "hardhat/console.sol";
 
-// TODO, both primary rewards and extra rewards are contingent upon [boost factor (derivedBalance), user balance in gauge] but otherwise share no logic.
+// TODO, both primary rewards and extra rewards are contingent upon [boost factor (boostFactor), user balance in gauge] but otherwise share no logic.
 // They do not share the way reward rate is calculated.  Reward rate for Axial is based on a weekly cadence.  Extra rewards are determined by:
 // rewardPerSec[token]
 // If we run out of tokens we need to handle it gracefully!!!!!!!!!
@@ -26,64 +26,96 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     // ==================== External Dependencies ==================== //
 
-    /// @notice the Axial token contract
-    IERC20 public constant AXIAL =
-        IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
+    /// The Axial token contract
+    IERC20 public constant AXIAL = IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
 
-    /// @notice token to allow boosting rewards - VEAXIAL
+    /// Token to allow boosting partner token rewards - VEAXIAL
     AccruingStake public immutable VEAXIAL;
 
-    /// @notice token to be staked in return for rewards
+    /// Token to be staked in return for primary rewards
     IERC20 public immutable poolToken;
 
     // ==================== Events ==================== //
 
+    /// @notice emitted when a user stakes
+    /// @param user The address of the user who staked
+    /// @param amount the quantity of tokens the user staked
     event Staked(address indexed user, uint256 amount);
+
+    /// @notice emitted when a user withdraws
+    /// @param user The address of the user who withdrew
+    /// @param amount The quantity of tokens the user withdrew
     event Withdrawn(address indexed user, uint256 amount);
+
+    /// @notice emitted when a reward is claimed by a user
+    /// @param user The address of the user who claimed the reward
+    /// @param reward The quantity of tokens the user claimed
+    /// @param token The address of the token the user claimed
     event RewardPaid(address indexed user, uint256 reward, address token);
+
+    /// @notice emitted when the primary reward or partner rewards are added to the gauge
+    /// @param reward the quantity of tokens added
+    /// @param token the address of the reward token
     event RewardAdded(uint256 reward, address token);
 
     // ==================== State Variables ==================== //
 
-    /// @dev tokens to be distributed as a reward to stakers
+    /// tokens to be distributed as a reward to stakers, 0 is primary reward and 1-... are partner rewards
     address[] public rewardTokens;
-    /// @dev contract responsible for distributing rewards (should be Gauge Proxy)
+
+    /// contract responsible for distributing primary rewards (should be Gauge Proxy)
     address public gaugeProxy;
-    uint256 public constant DURATION = 7 days;
 
-    uint256 public periodFinish = 0;
+    /// Distribution interval for primary reward token
+    uint256 public constant PRIMARY_REWARD_DURATION = 7 days;
+    mapping(address => uint256) partnerRewardDurations;
 
-    /// @dev token => rate
-    mapping(address => uint256) public rewardRates;
-    mapping(address => uint256) public rewardPerTokenStored;
-    /// @dev token => partner
+    /// Used to keep track of reward token intervals
+    // token => time
+    mapping (address => uint256) public periodFinish;
+    mapping (address => uint256) public lastUpdateTime;
+
+    /// Primary reward token rate
+    mapping (address => uint256) public rewardRates;
+
+    // token => amount
+    mapping (address => uint256) public rewardPerTokenStored;
+
+    /// @dev user => reward token => amount
+    mapping(address => mapping (address => uint256)) public userRewardPerTokenPaid;
+
+    /// @dev user => reward token => amount
+    mapping(address => mapping (address => uint256)) public rewards;
+
+    /// total supply of the primary reward token and partner reward tokens
+    uint256 private _totalLPTokenSupply;
+
+    /// boost-adjusted supply of the reward tokens
+    mapping (address => uint256) public derivedSupply;
+
+    /// user => LP token balance
+    mapping(address => uint256) private _lpTokenBalances;
+
+    /// user => boost factor
+    mapping(address => uint256) public boostFactors;
+
+    /// PARTNER STUFF:
+
+    /// partner reward token => partner, used to determine permission for setting reward rates
     mapping(address => address) public tokenPartners;
-
-    uint256 public lastUpdateTime;
-
-    /// @dev user => token => amount
-    mapping(address => mapping(address => uint256))
-        public userRewardPerTokenPaid;
-    /// @dev user => token => amount
-    mapping(address => mapping(address => uint256)) public rewards;
-
-    uint256 private _totalSupply;
-    uint256 public derivedSupply;
-    mapping(address => uint256) private _balances;
-    mapping(address => uint256) public derivedBalances;
 
     // ==================== Modifiers ==================== //
 
     modifier updateReward(address account) {
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            rewardPerTokenStored[rewardTokens[i]] = rewardPerToken(i);
-            lastUpdateTime = lastTimeRewardApplicable();
+        for (uint i = 0; i < rewardTokens.length; ++i) {
+            address token = rewardTokens[i];
+            //lastUpdateTime[token] = lastTimeRewardApplicable(token);
+            rewardPerTokenStored[token] = rewardPerToken(token);
             if (account != address(0)) {
-                rewards[account][rewardTokens[i]] = earned(account, i);
-                userRewardPerTokenPaid[account][
-                    rewardTokens[i]
-                ] = rewardPerTokenStored[rewardTokens[i]];
+                rewards[account][token] = earned(account, token);
+                userRewardPerTokenPaid[account][token] = rewardPerTokenStored[token];
             }
+            lastUpdateTime[token] = lastTimeRewardApplicable(token);
         }
         _;
         if (account != address(0)) {
@@ -122,10 +154,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         onlyGovernance
         validAddress(tokenAddress)
     {
-        // adding a new reward token to the array
-        rewardTokens.push(tokenAddress);
-        rewardRates[tokenAddress] = 0;
-        tokenPartners[tokenAddress] = partnerAddress;
+        require(tokenPartners[tokenAddress] == address(0), "Token already in use");
+        tokenPartners[tokenAddress] = partnerAddress; // certify partner with the authority to provide rewards for the token
+        rewardTokens.push(tokenAddress); // add token to our list of reward token addresses
     }
 
     /// @notice returns the amount of reward tokens for the gauge
@@ -133,55 +164,67 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         return rewardTokens.length;
     }
 
-    /// @notice return how many of our reward tokens is the user receiving per lp token
-    /// @dev (e.g. how many teddy or axial is received per AC4D token)
-    function rewardPerToken(uint256 tokenIndex) public view returns (uint256) {
-        if (_totalSupply == 0) { // todo, does this need to be made per token?
-            return rewardPerTokenStored[rewardTokens[tokenIndex]];
-        }
+    function partnerDepositRewardTokens(address tokenAddress, uint256 amount, uint256 rewardPerSec) external updateReward(address(0)) {
+        require(tokenPartners[tokenAddress] == msg.sender, "You do not have the right.");
+        require (rewardPerSec != 0, "Cannot set reward rate to 0");
+        IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), amount);
 
-        address token = rewardTokens[tokenIndex];
+        // Get balance in case there was some pending balance
+        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
 
-        //if (tokenIndex == 2) {
-        //     console.log(rewardTokens[tokenIndex]);
-        //     console.log("rPTS=", rewardPerTokenStored[rewardTokens[tokenIndex]]);
-        //     console.log("lTRA=", lastTimeRewardApplicable(token));
-        //     console.log("lUT=", lastUpdateTime[token]);
-        //     console.log("rR=", rewardRates[token]);
-        //     console.log("/dS=", derivedSupply);
-        //     console.log("...=", rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply)));
-        // //}
-        // rPTS + (lTRA - lUT * rR * 1e18 / dS)
+        uint duration = balance / rewardPerSec;
 
-        // TODO: does derivedSupply also need to be made per token?
-
-        return rewardPerTokenStored[rewardTokens[tokenIndex]].add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRates[token]).mul(1e18).div(derivedSupply));
+        lastUpdateTime[tokenAddress] = block.timestamp;
+        periodFinish[tokenAddress] = block.timestamp.add(duration);
+        rewardRates[tokenAddress] = rewardPerSec; // Just set the reward rate even if there is still pending balance
+        emit RewardAdded(amount, tokenAddress);
     }
 
-    /// @notice getting the reward to be received for each reward's respective staking period
-    function getRewardForDuration(uint256 tokenIndex)
-        external
-        view
-        returns (uint256)
+    /// @notice return how many of our reward tokens is the user receiving per lp token
+    /// @dev (e.g. how many teddy or axial is received per AC4D token)
+    function rewardPerToken(address token) public view returns (uint256) {
+        if (_totalLPTokenSupply == 0 || derivedSupply[token] == 0) {
+            return rewardPerTokenStored[token];
+        }
+
+        // rPTS + (lTRA - lUT * rR * 1e18 / dS)
+        // console.log("rPTS=", rewardPerTokenStored[token]);
+        // console.log("lTRA=", lastTimeRewardApplicable(token));
+        // console.log("lUT=", lastUpdateTime[token]);
+        // console.log("rR1e18=", rewardRates[token] * 1e18);
+        // console.log("dS=", derivedSupply[token]);
+
+        // Debug
+        uint256 rPT = rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
+        console.log("rPT=", rPT);
+
+        return rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
+    }
+
+    /// @notice getting the reward to be received for primary tokens respective staking period
+    function getRewardForDuration() external view returns (uint256)
     {
-        return rewardRates[rewardTokens[tokenIndex]].mul(DURATION);
+        address token = rewardTokens[0];
+        return rewardRates[token].mul(PRIMARY_REWARD_DURATION);
     }
 
     /// @notice gets the amount of reward tokens that the user has earned
-    function earned(address account, uint256 tokenIndex)
+    function earned(address account, address token)
         public
         view
         returns (uint256)
     {
         // x = dB * ( rPT - uRPTP ) / 1e18 + r 
-        //if (tokenIndex == 2) {
-            // console.log(rewardTokens[tokenIndex]);
-            // console.log("dB=", derivedBalances[account]);
-            // console.log("rPT=", rewardPerToken(tokenIndex));
-            // console.log("uRPTP=", userRewardPerTokenPaid[account][rewardTokens[tokenIndex]]);
-            // console.log("r=", rewards[account][rewardTokens[tokenIndex]]);
-        //}
-        return derivedBalances[account].mul(rewardPerToken(tokenIndex).sub(userRewardPerTokenPaid[account][rewardTokens[tokenIndex]])).div(1e18).add(rewards[account][rewardTokens[tokenIndex]]);
+        // console.log("bF=", boostFactors[account]);
+        // console.log("rPT=", rewardPerToken(token));
+        // console.log("uRPTP=", userRewardPerTokenPaid[account][token]);
+        // console.log("1e18+r=", 1e18 + rewards[account][token]);
+
+        // debug
+        uint256 e = boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
+        console.log("e=", e);
+
+        return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
     }
 
     /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
@@ -192,25 +235,23 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     /// @notice total supply of our lp tokens in the gauge (e.g. AC4D tokens present)
     function totalSupply() external view returns (uint256) {
-        return _totalSupply;
+        return _totalLPTokenSupply;
     }
 
     /// @notice balance of lp tokens that user has in the gauge (e.g. amount of AC4D a user has)
     function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
+        return _lpTokenBalances[account];
     }
 
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return Math.min(block.timestamp, periodFinish);
+    function lastTimeRewardApplicable(address token) public view returns (uint256) {
+        return Math.min(block.timestamp, periodFinish[token]);
     }
 
     /// @notice returns boost factor for specified account
-    /// THIS IS THE USERS BOOST, DO NOT BE CONFUSED BY THE NAME
-    /// TODO CHANGE THE NAME OF THIS TO SOMETHING WHICH DESCRIBES WHAT IT IS THERE FOR
-    function derivedBalance(address account) public view returns (uint256) {
-        uint256 _userBalanceInGauge = _balances[account];
+    function boostFactor(address account) public view returns (uint256) {
+        uint256 _userBalanceInGauge = _lpTokenBalances[account];
 
-        // If the user has no tokens in the gauge, return 0
+        // If the user has no tokens in the gauge, return 0 
         if (_userBalanceInGauge == 0) {
             return 0;
         }
@@ -220,18 +261,34 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
         uint256 _adjusted;
         if (totalVeAxial != 0) {
-            _adjusted = (_totalSupply.mul(usersVeAxialBalance).div(totalVeAxial));
+            _adjusted = (_totalLPTokenSupply.mul(usersVeAxialBalance).div(totalVeAxial));
         }
 
         return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
     }
 
     function kick(address account) public {
-        uint256 _derivedBalance = derivedBalances[account];
-        derivedSupply = derivedSupply.sub(_derivedBalance);
-        _derivedBalance = derivedBalance(account);
-        derivedBalances[account] = _derivedBalance;
-        derivedSupply = derivedSupply.add(_derivedBalance);
+        uint256 _boostFactor = boostFactors[account];
+
+        for (uint256 i = 0; i < rewardTokens.length; ++i) {
+            address token = rewardTokens[i];
+            //console.log(token);
+            //console.log("account=", account);
+            //console.log("derivedSupply=", derivedSupply[token]);
+            //console.log("boostFactor=", _boostFactor);
+            if (derivedSupply[token] > 0) {
+                derivedSupply[token] = derivedSupply[token].sub(_boostFactor);
+            }
+        }
+
+        _boostFactor = boostFactor(account);
+        boostFactors[account] = _boostFactor;
+
+        for (uint256 i = 0; i < rewardTokens.length; ++i) {
+            address token = rewardTokens[i];
+            //console.log(token);
+            derivedSupply[token] = derivedSupply[token].add(_boostFactor);
+        }
     }
 
     /// @notice internal deposit function
@@ -242,8 +299,8 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     {
         require(amount > 0, "Cannot stake 0");
         poolToken.safeTransferFrom(account, address(this), amount);
-        _totalSupply = _totalSupply.add(amount);
-        _balances[account] = _balances[account].add(amount);
+        _totalLPTokenSupply = _totalLPTokenSupply.add(amount);
+        _lpTokenBalances[account] = _lpTokenBalances[account].add(amount);
         emit Staked(account, amount);
     }
 
@@ -273,17 +330,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     {
         poolToken.safeTransfer(msg.sender, amount);
         require(amount > 0, "Cannot withdraw 0");
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
+        _totalLPTokenSupply = _totalLPTokenSupply.sub(amount);
+        _lpTokenBalances[msg.sender] = _lpTokenBalances[msg.sender].sub(amount);
         emit Withdrawn(msg.sender, amount);
     }
 
     /// @notice withdraws all pool tokens from the gauge
     function withdrawAll() external {
-        _withdraw(_balances[msg.sender]);
+        _withdraw(_lpTokenBalances[msg.sender]);
     }
 
-    /// @notice withdraw specified amount of tokens from the message senders balance
+    /// @notice withdraw specified amount of primary pool tokens from the message senders balance
     function withdraw(uint256 amount) external {
         _withdraw(amount);
     }
@@ -294,23 +351,26 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         nonReentrant
         updateReward(msg.sender)
     {
-        uint256 reward = rewards[msg.sender][rewardTokens[tokenIndex]];
+        address token = rewardTokens[tokenIndex];
+        require(token != address(0), "Reward token does not exist");
+        uint256 reward = rewards[msg.sender][token];
+        console.log("reward=", reward);
         if (reward > 0) {
-            IERC20(rewardTokens[tokenIndex]).safeTransfer(msg.sender, reward);
-            rewards[msg.sender][rewardTokens[tokenIndex]] = 0;
-            emit RewardPaid(msg.sender, reward, rewardTokens[tokenIndex]);
+            IERC20(token).safeTransfer(msg.sender, reward);
+            rewards[msg.sender][token] = 0;
+            emit RewardPaid(msg.sender, reward, token);
         }
     }
 
     /// @notice claims specific reward indices
-    function claimRewards(uint256[] calldata tokenIndices) public {
+    function getRewards(uint256[] calldata tokenIndices) public {
         for (uint256 i = 0; i < tokenIndices.length; ++i) {
             getReward(tokenIndices[i]);
         }
     }
 
-    /// @notice claims all rewards
-    function claimAllRewards() public {
+    // /// @notice claims all rewards
+    function getAllRewards() public {
         for (uint256 i = 0; i < rewardTokens.length; ++i) {
             getReward(i);
         }
@@ -318,54 +378,8 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     /// @notice withdraw deposited pool tokens and claim reward tokens
     function exit() external {
-        _withdraw(_balances[msg.sender]);
-        for (uint256 i = 0; i < rewardTokens.length; ++i) {
-            getReward(i);
-        }
-    }
-
-    // TODO: Chesterton's fence, see if this function is being used anywhere
-    function notifyReward(uint256 reward, address tokenAddress)
-        external
-        updateReward(address(0))
-    {
-        address userAddr = msg.sender;
-        require (tokenPartners[tokenAddress] == userAddr, "You do not have the right");
-        IERC20(tokenAddress).safeTransferFrom(
-            msg.sender,
-            address(this),
-            reward
-        );
-        if (block.timestamp >= periodFinish) {
-            rewardRates[tokenAddress] = reward.div(DURATION);
-        } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
-            uint256 leftover = remaining.mul(
-                rewardRates[tokenAddress]
-            );
-            rewardRates[tokenAddress] = reward.add(leftover).div(
-                DURATION
-            );
-        }
-
-        // Ensure the provided reward amount is not more than the balance in the contract.
-        // This keeps the reward rate in the right range, preventing overflows due to
-        // very high values of rewardRate in the earned and rewardsPerToken functions;
-        // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
-        uint256 balance = IERC20(tokenAddress).balanceOf(
-            address(this)
-        );
-        // console.log("balance=", balance);
-        // console.log("rewardRate=", rewardRates[tokenAddress]);
-        // console.log("balance/duration=", balance.div(DURATION));
-        require(
-            rewardRates[tokenAddress] <= balance.div(DURATION),
-            "Provided reward too high for reward token"
-        );
-
-        lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp.add(DURATION);
-        emit RewardAdded(reward, tokenAddress);
+        _withdraw(_lpTokenBalances[msg.sender]);
+        getAllRewards();
     }
 
     /// @notice only called by the GaugeProxy and so only deals in the native token
@@ -374,31 +388,33 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         onlyDistribution
         updateReward(address(0))
     {
-        IERC20(rewardTokens[0]).safeTransferFrom(
+        address token = rewardTokens[0];
+        IERC20(token).safeTransferFrom(
             gaugeProxy,
             address(this),
             reward
         );
-        if (block.timestamp >= periodFinish) {
-            rewardRates[rewardTokens[0]] = reward.div(DURATION);
+        if (block.timestamp >= periodFinish[token]) {
+            rewardRates[token] = reward.div(PRIMARY_REWARD_DURATION);
         } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
-            uint256 leftover = remaining.mul(rewardRates[rewardTokens[0]]);
-            rewardRates[rewardTokens[0]] = reward.add(leftover).div(DURATION);
+            uint256 remaining = periodFinish[token].sub(block.timestamp);
+            uint256 leftover = remaining.mul(rewardRates[token]);
+            //console.log(PRIMARY_REWARD_DURATION);
+            rewardRates[token] = reward.add(leftover).div(PRIMARY_REWARD_DURATION);
         }
 
         // Ensure the provided reward amount is not more than the balance in the contract.
         // This keeps the reward rate in the right range, preventing overflows due to
         // very high values of rewardRate in the earned and rewardsPerToken functions;
         // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
-        uint256 balance = IERC20(rewardTokens[0]).balanceOf(address(this));
+        uint256 balance = IERC20(token).balanceOf(address(this));
         require(
-            rewardRates[rewardTokens[0]] <= balance.div(DURATION),
+            rewardRates[token] <= balance.div(PRIMARY_REWARD_DURATION),
             "Provided reward too high"
         );
 
-        lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp.add(DURATION);
-        emit RewardAdded(reward, rewardTokens[0]);
+        lastUpdateTime[token] = block.timestamp;
+        periodFinish[token] = block.timestamp.add(PRIMARY_REWARD_DURATION);
+        emit RewardAdded(reward, token);
     }
 }

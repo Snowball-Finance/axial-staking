@@ -17,7 +17,7 @@ import {
   AccruingStake__factory,
   IMasterChef,
 } from "../typechain";
-import { SECONDS_IN_A_YEAR } from "./constants";
+import { SECONDS_IN_A_DAY, SECONDS_IN_A_YEAR } from "./constants";
 
 let masterChef: Contract;
 let gaugeProxy: GaugeProxy;
@@ -159,6 +159,10 @@ describe("Gauge Proxy:", function () {
         let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
         console.log("gaugeAddr=", gaugeAddr);
 
+        // Alice is gonna deposit some LP tokens into the gauge
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await gauge.connect(alice).depositAll();
+
         await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
@@ -169,19 +173,27 @@ describe("Gauge Proxy:", function () {
         await rewardToken3.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
         await rewardToken4.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
 
-        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken1.address);
-        //await increaseTime(60);
-        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken2.address);
-        //await increaseTime(60);
-        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken3.address);
-        //await increaseTime(60);
-        await gauge.connect(dave).notifyReward(SECONDS_IN_A_WEEK * 2, rewardToken4.address);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken1.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken2.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken3.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken4.address, SECONDS_IN_A_WEEK, 1);
 
         let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
         console.log("rewardTokens=", rewardTokens.toNumber());
 
       await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
       //await gauge.connect(alice).depositAll();
+
+      for (let i = 0; i < 6; ++i) {
+        await increaseTime(SECONDS_IN_A_DAY);
+        await gauge.connect(alice).getAllRewards();
+
+        let balances = [await rewardToken1.balanceOf(alice.address),
+          await rewardToken2.balanceOf(alice.address),
+          await rewardToken3.balanceOf(alice.address),
+          await rewardToken4.balanceOf(alice.address)];
+          console.log(balances);
+      }
 
       await increaseTime(SECONDS_IN_A_YEAR);
 
@@ -192,7 +204,7 @@ describe("Gauge Proxy:", function () {
         indexArray.push(i);
       }
 
-      await gauge.connect(alice).claimRewards(indexArray);
+      await gauge.connect(alice).getAllRewards();
 
       let balances = [await rewardToken1.balanceOf(alice.address),
                       await rewardToken2.balanceOf(alice.address),
@@ -207,7 +219,7 @@ describe("Gauge Proxy:", function () {
       await increaseTime(SECONDS_IN_A_YEAR);
       //await gaugeProxy.connect(deployer).preDistribute();
       //await gaugeProxy.connect(deployer).distribute(0, numGauges);
-      await gauge.connect(alice).claimRewards(indexArray);
+      await gauge.connect(alice).getAllRewards();
       balances = [await rewardToken1.balanceOf(alice.address),
         await rewardToken2.balanceOf(alice.address),
         await rewardToken3.balanceOf(alice.address),
