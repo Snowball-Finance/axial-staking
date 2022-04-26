@@ -184,6 +184,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     /// @dev (e.g. how many teddy or axial is received per AC4D token)
     function rewardPerToken(address token) public view returns (uint256) {
         if (_totalLPTokenSupply == 0 || derivedSupply[token] == 0) {
+            console.log(derivedSupply[token]);
             return rewardPerTokenStored[token];
         }
 
@@ -195,8 +196,12 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // console.log("dS=", derivedSupply[token]);
 
         // Debug
-        uint256 rPT = rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
-        console.log("rPT=", rPT);
+        // uint256 rPT = rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
+        // console.log("rPT=", rPT);
+        uint256 r = lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18);
+        console.log("r=", r);
+        uint256 ds = derivedSupply[token];
+        console.log("ds=", ds);
 
         return rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
     }
@@ -221,9 +226,11 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // console.log("1e18+r=", 1e18 + rewards[account][token]);
 
         // debug
-        uint256 e = boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
-        console.log("e=", e);
+        // uint256 e = boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
+        // console.log("e=", e);
 
+        uint256 uRPTP = userRewardPerTokenPaid[account][token];
+        console.log("uRPTP=", uRPTP);
         return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
     }
 
@@ -355,6 +362,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         require(token != address(0), "Reward token does not exist");
         uint256 reward = rewards[msg.sender][token];
         console.log("reward=", reward);
+        // DEBUG
+        uint256 _reward = IERC20(token).balanceOf(address(this));
+        console.log("balance=", _reward);
         if (reward > 0) {
             IERC20(token).safeTransfer(msg.sender, reward);
             rewards[msg.sender][token] = 0;
