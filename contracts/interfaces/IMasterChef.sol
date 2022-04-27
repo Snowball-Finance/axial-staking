@@ -13,9 +13,9 @@ interface IMasterChef {
 
     struct PoolInfo {
         IERC20 lpToken; // Address of LP token contract.
-        uint256 allocPoint; // How many allocation points assigned to this pool. AXIAL to distribute per block.
-        uint256 lastRewardTimestamp; // Last block number that AXIAL distribution occurs.
-        uint256 accAxialPerShare; // Accumulated AXIAL per share, times 1e12. See below.
+        uint256 allocPoint; // How many allocation points assigned to this pool. AXIALs to distribute per second.
+        uint256 lastRewardTimestamp; // Last timestamp that AXIALs distribution occurs.
+        uint256 accAxialPerShare; // Accumulated AXIALs per share, times 1e12. See below.
     }
 
     function poolInfo(uint256 pid) external view returns (IMasterChef.PoolInfo memory);

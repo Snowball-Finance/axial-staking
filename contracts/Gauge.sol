@@ -106,6 +106,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     // ==================== Modifiers ==================== //
 
+    // Affects all rewards
     modifier updateReward(address account) {
         for (uint i = 0; i < rewardTokens.length; ++i) {
             address token = rewardTokens[i];
@@ -142,6 +143,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         gaugeProxy = msg.sender;
         governance = _governance;
         VEAXIAL = AccruingStake(_veaxial);
+        rewardTokens.push(address(AXIAL));
     }
 
     // ==================== Reward Token Logic ==================== //
@@ -219,7 +221,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         view
         returns (uint256)
     {
-        // x = dB * ( rPT - uRPTP ) / 1e18 + r 
+        // x = bF * ( rPT - uRPTP ) / 1e18 + r 
         // console.log("bF=", boostFactors[account]);
         // console.log("rPT=", rewardPerToken(token));
         // console.log("uRPTP=", userRewardPerTokenPaid[account][token]);
@@ -231,7 +233,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
         uint256 uRPTP = userRewardPerTokenPaid[account][token];
         console.log("uRPTP=", uRPTP);
-        return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
+
+        return userShare(account).mul(boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token])).div(1e18);
+
+        //return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
     }
 
     /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
@@ -252,6 +257,11 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     function lastTimeRewardApplicable(address token) public view returns (uint256) {
         return Math.min(block.timestamp, periodFinish[token]);
+    }
+
+    // returns the users share of the total LP supply * 1e18
+    function userShare(address account) public view returns (uint256) {
+        return _lpTokenBalances[account] * 1e18 / _totalLPTokenSupply;
     }
 
     /// @notice returns boost factor for specified account

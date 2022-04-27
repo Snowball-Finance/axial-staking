@@ -270,12 +270,13 @@ contract GaugeProxy is ProtocolGovernance {
     }
 
     /// @notice Deposits Axial dummy token into MCAV2
-    function deposit() public {
+    function depositDummyToken() public {
         //require(pid < UINT256_MAX, "pid not initialized");
         require(pid != 0, "pid not initialized");
         uint256 _balance = axialDummyToken.balanceOf(address(this));
         axialDummyToken.safeApprove(address(MCAV2), 0);
         axialDummyToken.safeApprove(address(MCAV2), _balance);
+        console.log("gaugeProxyAxialDummyBalance=", _balance);
         MCAV2.deposit(pid, _balance);
     }
 
@@ -283,7 +284,7 @@ contract GaugeProxy is ProtocolGovernance {
     function collect() public {
         (uint256 _locked, ) = MCAV2.userInfo(pid, address(this));
         MCAV2.withdraw(pid, _locked);
-        deposit();
+        depositDummyToken();
     }
 
     // ==================== Distribution Logic ==================== //
@@ -315,6 +316,8 @@ contract GaugeProxy is ProtocolGovernance {
             locktime + DISTRIBUTION_DEADLINE >= block.timestamp,
             "lock expired"
         );
+        console.log("lockedBalance=", lockedBalance);
+        console.log("lockedTotalWeight=", lockedTotalWeight);
         if (lockedBalance > 0 && lockedTotalWeight > 0) {
             for (uint256 i = _start; i < _end; i++) {
                 address _token = _tokens[i];
@@ -322,6 +325,7 @@ contract GaugeProxy is ProtocolGovernance {
                 uint256 _reward = lockedBalance.mul(lockedWeights[_token]).div(
                     totalWeight
                 );
+                console.log("_reward=", _reward);
                 if (_reward > 0) {
                     Axial.safeApprove(_gauge, 0);
                     Axial.safeApprove(_gauge, _reward);

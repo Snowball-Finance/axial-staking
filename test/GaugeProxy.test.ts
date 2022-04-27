@@ -2,10 +2,11 @@
 /* eslint-disable camelcase */
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
-import { BigNumberish, Signer, Contract } from "ethers";
+import { BigNumberish, Signer, Contract, BigNumber } from "ethers";
 import { ethers, hardhatArguments, network } from "hardhat";
 import {increaseTime} from "./utils";
 import {
+  ERC20,
   ERC20TokenMock,
   ERC20TokenMock__factory,
   GaugeProxy,
@@ -21,7 +22,7 @@ import { SECONDS_IN_A_DAY, SECONDS_IN_A_YEAR } from "./constants";
 
 let masterChef: Contract;
 let gaugeProxy: GaugeProxy;
-let axial: ERC20TokenMock;
+let axial: Contract;
 let sAxial: StakedAxialToken;
 let veAxial: AccruingStake;
 let testToken: ERC20TokenMock;
@@ -37,9 +38,12 @@ let dave: SignerWithAddress;
 const ALLOCATED_FOR_USERS = 5000000;
 const SECONDS_IN_A_WEEK = 60 * 60 * 24 * 7;
 
+//const AXIAL_MAX_SUPPLY : BigNumber = BigNumber.from(365_000_000e18);
+
 let testTokenAddress: string;
 
 let masterChefABI = [{"inputs":[{"internalType":"contract AxialToken","name":"_axial","type":"address"},{"internalType":"address","name":"_devAddr","type":"address"},{"internalType":"address","name":"_treasuryAddr","type":"address"},{"internalType":"address","name":"_investorAddr","type":"address"},{"internalType":"uint256","name":"_axialPerSec","type":"uint256"},{"internalType":"uint256","name":"_startTimestamp","type":"uint256"},{"internalType":"uint256","name":"_devPercent","type":"uint256"},{"internalType":"uint256","name":"_treasuryPercent","type":"uint256"},{"internalType":"uint256","name":"_investorPercent","type":"uint256"}],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"allocPoint","type":"uint256"},{"indexed":true,"internalType":"contract IERC20","name":"lpToken","type":"address"},{"indexed":true,"internalType":"contract IRewarder","name":"rewarder","type":"address"}],"name":"Add","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"EmergencyWithdraw","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Harvest","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"allocPoint","type":"uint256"},{"indexed":true,"internalType":"contract IRewarder","name":"rewarder","type":"address"},{"indexed":false,"internalType":"bool","name":"overwrite","type":"bool"}],"name":"Set","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"oldAddress","type":"address"},{"indexed":true,"internalType":"address","name":"newAddress","type":"address"}],"name":"SetDevAddress","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"_axialPerSec","type":"uint256"}],"name":"UpdateEmissionRate","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"lastRewardTimestamp","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"lpSupply","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"accAxialPerShare","type":"uint256"}],"name":"UpdatePool","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":true,"internalType":"uint256","name":"pid","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Withdraw","type":"event"},{"inputs":[{"internalType":"uint256","name":"_allocPoint","type":"uint256"},{"internalType":"contract IERC20","name":"_lpToken","type":"address"},{"internalType":"contract IRewarder","name":"_rewarder","type":"address"}],"name":"add","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"axial","outputs":[{"internalType":"contract AxialToken","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"axialPerSec","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"deposit","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_devAddr","type":"address"}],"name":"dev","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"devAddr","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"devPercent","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"}],"name":"emergencyWithdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"investorAddr","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"investorPercent","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"massUpdatePools","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"},{"internalType":"address","name":"_user","type":"address"}],"name":"pendingTokens","outputs":[{"internalType":"uint256","name":"pendingAxial","type":"uint256"},{"internalType":"address","name":"bonusTokenAddress","type":"address"},{"internalType":"string","name":"bonusTokenSymbol","type":"string"},{"internalType":"uint256","name":"pendingBonusToken","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"poolInfo","outputs":[{"internalType":"contract IERC20","name":"lpToken","type":"address"},{"internalType":"uint256","name":"allocPoint","type":"uint256"},{"internalType":"uint256","name":"lastRewardTimestamp","type":"uint256"},{"internalType":"uint256","name":"accAxialPerShare","type":"uint256"},{"internalType":"contract IRewarder","name":"rewarder","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"poolLength","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"}],"name":"rewarderBonusTokenInfo","outputs":[{"internalType":"address","name":"bonusTokenAddress","type":"address"},{"internalType":"string","name":"bonusTokenSymbol","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"},{"internalType":"uint256","name":"_allocPoint","type":"uint256"},{"internalType":"contract IRewarder","name":"_rewarder","type":"address"},{"internalType":"bool","name":"overwrite","type":"bool"}],"name":"set","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_newDevPercent","type":"uint256"}],"name":"setDevPercent","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_investorAddr","type":"address"}],"name":"setInvestorAddr","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_newInvestorPercent","type":"uint256"}],"name":"setInvestorPercent","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_treasuryAddr","type":"address"}],"name":"setTreasuryAddr","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_newTreasuryPercent","type":"uint256"}],"name":"setTreasuryPercent","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"startTimestamp","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalAllocPoint","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"treasuryAddr","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"treasuryPercent","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_axialPerSec","type":"uint256"}],"name":"updateEmissionRate","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"}],"name":"updatePool","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"address","name":"","type":"address"}],"name":"userInfo","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"rewardDebt","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_pid","type":"uint256"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+let axialABI = [{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"spender","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"delegator","type":"address"},{"indexed":true,"internalType":"address","name":"fromDelegate","type":"address"},{"indexed":true,"internalType":"address","name":"toDelegate","type":"address"}],"name":"DelegateChanged","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"delegate","type":"address"},{"indexed":false,"internalType":"uint256","name":"previousBalance","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"newBalance","type":"uint256"}],"name":"DelegateVotesChanged","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[],"name":"DELEGATION_TYPEHASH","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"DOMAIN_TYPEHASH","outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"spender","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"uint32","name":"","type":"uint32"}],"name":"checkpoints","outputs":[{"internalType":"uint32","name":"fromBlock","type":"uint32"},{"internalType":"uint256","name":"votes","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"subtractedValue","type":"uint256"}],"name":"decreaseAllowance","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"delegatee","type":"address"}],"name":"delegate","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"delegatee","type":"address"},{"internalType":"uint256","name":"nonce","type":"uint256"},{"internalType":"uint256","name":"expiry","type":"uint256"},{"internalType":"uint8","name":"v","type":"uint8"},{"internalType":"bytes32","name":"r","type":"bytes32"},{"internalType":"bytes32","name":"s","type":"bytes32"}],"name":"delegateBySig","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"delegator","type":"address"}],"name":"delegates","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"getCurrentVotes","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"},{"internalType":"uint256","name":"blockNumber","type":"uint256"}],"name":"getPriorVotes","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"addedValue","type":"uint256"}],"name":"increaseAllowance","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"maxSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_to","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"nonces","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"numCheckpoints","outputs":[{"internalType":"uint32","name":"","type":"uint32"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"recipient","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"sender","type":"address"},{"internalType":"address","name":"recipient","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"transferFrom","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"}]
 
 async function impersonate(
   account: string
@@ -138,12 +142,29 @@ describe("Gauge Proxy:", function () {
 
       await stakeAndVote(alice, 100);
       await stakeAndVote(bob, 100);
+      await stakeAndVote(carol, 100);
+
+      await increaseTime(SECONDS_IN_A_WEEK);
+
       await gaugeProxy.connect(deployer).preDistribute();
       let numGauges = await gaugeProxy.connect(deployer).length();
+      console.log("numGauges=", numGauges);
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      let axialPerSec = await masterChef.connect(deployer).axialPerSec();
+      console.log("axialPerSec=", axialPerSec);
+      let poolInfo = await masterChef.connect(deployer).poolInfo(poolID);
+      console.log("poolInfo=", poolInfo);
+      let gaugeProxyUserInfo = await masterChef.userInfo(poolID, gaugeProxy.address);
+      console.log("gaugeProxyUserInfo=", gaugeProxyUserInfo);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      numGauges = await gaugeProxy.connect(deployer).length();
       await gaugeProxy.connect(deployer).distribute(0, numGauges);
 
       let tokens = await gaugeProxy.connect(alice).tokens();
 
+      let rewardToken0 = axial;
       let rewardToken1 = await new ERC20TokenMock__factory(dave).deploy("rewardToken1", "REWARD1");
       let rewardToken2 = await new ERC20TokenMock__factory(dave).deploy("rewardToken2", "REWARD2");
       let rewardToken3 = await new ERC20TokenMock__factory(dave).deploy("rewardToken3", "REWARD3");
@@ -159,9 +180,16 @@ describe("Gauge Proxy:", function () {
         let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
         console.log("gaugeAddr=", gaugeAddr);
 
+        let gaugeAxialTokens = await axial.balanceOf(gaugeAddr);
+        console.log("gaugeAxialTokens=", gaugeAxialTokens);
+
         // Alice is gonna deposit some LP tokens into the gauge
         await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
         await gauge.connect(alice).depositAll();
+
+        // Carol as well
+        await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await gauge.connect(carol).depositAll();
 
         await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
@@ -179,16 +207,26 @@ describe("Gauge Proxy:", function () {
         await gauge.connect(dave).partnerDepositRewardTokens(rewardToken4.address, SECONDS_IN_A_WEEK, 1);
 
         let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
-        console.log("rewardTokens=", rewardTokens.toNumber());
 
       await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
       //await gauge.connect(alice).depositAll();
+
+      let rewardTokensAddr = [];
+      for (let i = 0; i < rewardTokens.toNumber(); ++i) {
+        rewardTokensAddr.push(await gauge.connect(alice).rewardTokens(i));
+      }
+      console.log(rewardTokensAddr);
 
       for (let i = 0; i < 6; ++i) {
         await increaseTime(SECONDS_IN_A_DAY);
         await gauge.connect(alice).getAllRewards();
 
-        let balances = [await rewardToken1.balanceOf(alice.address),
+        let ownership = await gauge.connect(alice).userShare(alice.address);
+        console.log("Alice Ownership=", ownership);
+
+        let balances = [
+          await axial.balanceOf(alice.address),
+          await rewardToken1.balanceOf(alice.address),
           await rewardToken2.balanceOf(alice.address),
           await rewardToken3.balanceOf(alice.address),
           await rewardToken4.balanceOf(alice.address)];
@@ -206,10 +244,14 @@ describe("Gauge Proxy:", function () {
 
       await gauge.connect(alice).getAllRewards();
 
-      let balances = [await rewardToken1.balanceOf(alice.address),
-                      await rewardToken2.balanceOf(alice.address),
-                      await rewardToken3.balanceOf(alice.address),
-                      await rewardToken4.balanceOf(alice.address)];
+
+      let balances = [
+        await axial.balanceOf(alice.address),
+        await rewardToken1.balanceOf(alice.address),
+        await rewardToken2.balanceOf(alice.address),
+        await rewardToken3.balanceOf(alice.address),
+        await rewardToken4.balanceOf(alice.address)];
+      console.log(axial.address);
       console.log(rewardToken1.address);
       console.log(rewardToken2.address);
       console.log(rewardToken3.address);
@@ -220,12 +262,17 @@ describe("Gauge Proxy:", function () {
       //await gaugeProxy.connect(deployer).preDistribute();
       //await gaugeProxy.connect(deployer).distribute(0, numGauges);
       await gauge.connect(alice).getAllRewards();
-      balances = [await rewardToken1.balanceOf(alice.address),
+      balances = [
+        await axial.balanceOf(alice.address),
+        await rewardToken1.balanceOf(alice.address),
         await rewardToken2.balanceOf(alice.address),
         await rewardToken3.balanceOf(alice.address),
         await rewardToken4.balanceOf(alice.address)];
 
       console.log(balances);
+
+      let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
+      console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
 
     }
 
@@ -238,8 +285,22 @@ describe("Gauge Proxy:", function () {
 async function setupTest(): Promise<void> {
   [deployer, alice, bob, carol, dave] = await ethers.getSigners();
 
+  console.log("impersonating mcv2 owner");
+
+  // impersonate owner of MCV2
+  let MCV2Owner = await impersonate("0x4980ad7ccb304f7d3c5053aa1131ed1edaf48809");
+
+  console.log("connecting to masterchef");
+
+  masterChef = new ethers.Contract(masterChefaddr, masterChefABI, MCV2Owner);
+
+  let masterChefSigner = await impersonate(masterChef.address);
+  await setBalance(masterChefaddr, "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+
   // Deploy Axial
-  axial = await new ERC20TokenMock__factory(deployer).deploy("Axial", "AXIAL");
+  //axial = await new ERC20TokenMock__factory(deployer).deploy("Axial", "AXIAL");
+  //0xcf8419a615c57511807236751c0af38db4ba3351
+  axial = new ethers.Contract("0xcf8419a615c57511807236751c0af38db4ba3351", axialABI, masterChefSigner);
 
   // Deploy sAxial
   sAxial = await new StakedAxialToken__factory(deployer).deploy(axial.address);
@@ -272,16 +333,7 @@ async function setupTest(): Promise<void> {
   let deployerBalance = await testToken.balanceOf(deployer.address);
   await gaugeProxy.connect(deployer).addGauge(testTokenAddress);
 
-  console.log("impersonating mcv2 owner");
 
-  // impersonate owner of MCV2
-  let MCV2Owner = await impersonate("0x4980ad7ccb304f7d3c5053aa1131ed1edaf48809");
-
-  console.log("connecting to masterchef");
-
-  // Create a new pool on MCV2
-  //masterChef = new ethers.Contract(masterChefaddr, masterChefABI, deployer);
-  masterChef = new ethers.Contract(masterChefaddr, masterChefABI, MCV2Owner);
   let dummyToken = await gaugeProxy.connect(deployer).axialDummyToken();
   let poolLength = await masterChef.poolLength();
 
@@ -291,9 +343,9 @@ async function setupTest(): Promise<void> {
   // Add a new pool and give it an allocation point
   //await masterChef.add(1, dummyToken, "0x0000000000000000000000000000000000000000");
   await masterChef.connect(MCV2Owner).add(1, dummyToken, "0x0000000000000000000000000000000000000000");
-  
+
   // Set all pools besides the old one to have no allocation points
-  for (let i = 0; i < poolLength; ++i) {
+  for (let i = 0; i < poolLength - 1; ++i) {
     //await masterChef.set(i, 0, "0x0000000000000000000000000000000000000000", true);
     console.log("setting old pools to 0");
     await masterChef.connect(MCV2Owner).set(i, 0, "0x0000000000000000000000000000000000000000", true);
@@ -303,17 +355,20 @@ async function setupTest(): Promise<void> {
 
   await gaugeProxy.connect(deployer).setPID(poolLength);
 
+  await gaugeProxy.connect(deployer).depositDummyToken();
+
   // Mint axial
-  await axial.connect(deployer).mint(alice.address, ALLOCATED_FOR_USERS);
-  await axial.connect(deployer).mint(bob.address, ALLOCATED_FOR_USERS);
-  await axial.connect(deployer).mint(carol.address, ALLOCATED_FOR_USERS);
-  await axial.connect(deployer).mint(dave.address, ALLOCATED_FOR_USERS);
+  await axial.connect(masterChefSigner).mint(alice.address, ALLOCATED_FOR_USERS);
+  await axial.connect(masterChefSigner).mint(bob.address, ALLOCATED_FOR_USERS);
+  await axial.connect(masterChefSigner).mint(carol.address, ALLOCATED_FOR_USERS);
+  await axial.connect(masterChefSigner).mint(dave.address, ALLOCATED_FOR_USERS);
 
   // Give out some pool tokens
   await testToken.connect(deployer).mint(alice.address, ALLOCATED_FOR_USERS);
   await testToken.connect(deployer).mint(bob.address, ALLOCATED_FOR_USERS);
   await testToken.connect(deployer).mint(carol.address, ALLOCATED_FOR_USERS);
   await testToken.connect(deployer).mint(dave.address, ALLOCATED_FOR_USERS);
+
 }
 
 async function stakeAndVote(

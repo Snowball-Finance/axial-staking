@@ -10,7 +10,7 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-//import "hardhat/console.sol";
+import "hardhat/console.sol";
 
 interface IsAxial {
   function balanceOf(address _account) external view returns (uint256);
@@ -358,6 +358,7 @@ contract Governance is ReentrancyGuard, Ownable {
         Receipt storage receipt = receipts[_proposalId][msg.sender];
 
         uint256 votes = sAXIAL.balanceOf(msg.sender);
+        console.log("votes=", votes);
 
         // Remove any previous votes if the user cast them already
         if (receipt.hasVoted) {
@@ -370,6 +371,7 @@ contract Governance is ReentrancyGuard, Ownable {
         // Update users receipt
         receipt.hasVoted = true;
         receipt.support = _support;
+        receipt.votes = votes;
 
         emit NewVote(_proposalId, msg.sender, _support, votes);
     }
