@@ -182,7 +182,7 @@ pragma solidity 0.8.9;
 /// @notice Multiple-choice proposals are also valid and can be used to select a specific execution context
 
 
-//import "hardhat/console.sol";
+// import "hardhat/console.sol";
 
 interface IsAxial {
   function balanceOf(address _account) external view returns (uint256);
@@ -285,6 +285,10 @@ contract Governance is ReentrancyGuard, Ownable {
     /// @dev This token must not be tradeable
     constructor(address _sAXIAL) {
         sAXIAL = IsAxial(_sAXIAL);
+    }
+
+    function getProposalVotes(uint256 proposalId) public view returns (uint256[] memory) {
+        return proposals[proposalId].votes;
     }
 
     // Setters
@@ -490,6 +494,17 @@ contract Governance is ReentrancyGuard, Ownable {
         }
 
         Proposal storage newProposal = proposals[proposalCount];
+        // newProposal.votes = new uint256[](0);
+
+        // if (!_metaData.isBoolean) {
+        //     for (uint256 i = 0; i < _executionContexts.length; ++i) {
+        //         newProposal.votes.push(0); // A, B, C ...
+        //     }
+        // } else {
+        //     newProposal.votes.push(0); // No
+        //     newProposal.votes.push(0); // Yes
+        // }
+
         newProposal.title = _metaData.title;
         newProposal.metadata = _metaData.metadata;
         newProposal.proposer = msg.sender;
@@ -542,6 +557,7 @@ contract Governance is ReentrancyGuard, Ownable {
         // Update users receipt
         receipt.hasVoted = true;
         receipt.support = _support;
+        receipt.votes = votes;
 
         emit NewVote(_proposalId, msg.sender, _support, votes);
     }

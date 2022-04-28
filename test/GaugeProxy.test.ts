@@ -37,6 +37,7 @@ let dave: SignerWithAddress;
 
 const ALLOCATED_FOR_USERS = 5000000;
 const SECONDS_IN_A_WEEK = 60 * 60 * 24 * 7;
+const SECONDS_IN_A_WEEK_1e18 : BigNumber = BigNumber.from(SECONDS_IN_A_WEEK).mul(BigNumber.from("1000000000000000000"));
 
 //const AXIAL_MAX_SUPPLY : BigNumber = BigNumber.from(365_000_000e18);
 
@@ -148,15 +149,15 @@ describe("Gauge Proxy:", function () {
 
       await gaugeProxy.connect(deployer).preDistribute();
       let numGauges = await gaugeProxy.connect(deployer).length();
-      console.log("numGauges=", numGauges);
+      // console.log("numGauges=", numGauges);
       await gaugeProxy.connect(deployer).distribute(0, numGauges);
 
       let axialPerSec = await masterChef.connect(deployer).axialPerSec();
-      console.log("axialPerSec=", axialPerSec);
+      // console.log("axialPerSec=", axialPerSec);
       let poolInfo = await masterChef.connect(deployer).poolInfo(poolID);
-      console.log("poolInfo=", poolInfo);
+      // console.log("poolInfo=", poolInfo);
       let gaugeProxyUserInfo = await masterChef.userInfo(poolID, gaugeProxy.address);
-      console.log("gaugeProxyUserInfo=", gaugeProxyUserInfo);
+      // console.log("gaugeProxyUserInfo=", gaugeProxyUserInfo);
 
       await gaugeProxy.connect(deployer).preDistribute();
       numGauges = await gaugeProxy.connect(deployer).length();
@@ -178,7 +179,7 @@ describe("Gauge Proxy:", function () {
         let indexArray = [];
         let gaugeAddr = await gaugeProxy.getGauge(tokens[i]);
         let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
-        console.log("gaugeAddr=", gaugeAddr);
+        // console.log("gaugeAddr=", gaugeAddr);
 
         let gaugeAxialTokens = await axial.balanceOf(gaugeAddr);
         console.log("gaugeAxialTokens=", gaugeAxialTokens);
@@ -190,6 +191,14 @@ describe("Gauge Proxy:", function () {
         // Carol as well
         await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
         await gauge.connect(carol).depositAll();
+
+        // // Alice is also going to stake into veAxial
+        // await axial.connect(alice).approve(veAxial.address, ALLOCATED_FOR_USERS);
+        // await veAxial.connect(alice).stake(ALLOCATED_FOR_USERS - 100);
+
+        // // Carol as well
+        // await axial.connect(carol).approve(veAxial.address, ALLOCATED_FOR_USERS);
+        // await veAxial.connect(carol).stake(ALLOCATED_FOR_USERS - 100);
 
         await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
@@ -217,12 +226,13 @@ describe("Gauge Proxy:", function () {
       }
       console.log(rewardTokensAddr);
 
-      for (let i = 0; i < 6; ++i) {
+      for (let i = 0; i < 7; ++i) {
         await increaseTime(SECONDS_IN_A_DAY);
         await gauge.connect(alice).getAllRewards();
+        await gauge.connect(carol).getAllRewards(); // carol too
 
-        let ownership = await gauge.connect(alice).userShare(alice.address);
-        console.log("Alice Ownership=", ownership);
+        // let ownership = await gauge.connect(alice).userShare(alice.address);
+        // console.log("Alice Ownership=", ownership);
 
         let balances = [
           await axial.balanceOf(alice.address),
@@ -230,7 +240,15 @@ describe("Gauge Proxy:", function () {
           await rewardToken2.balanceOf(alice.address),
           await rewardToken3.balanceOf(alice.address),
           await rewardToken4.balanceOf(alice.address)];
-          console.log(balances);
+          console.log("alice",balances);
+
+          balances = [
+            await axial.balanceOf(carol.address),
+            await rewardToken1.balanceOf(carol.address),
+            await rewardToken2.balanceOf(carol.address),
+            await rewardToken3.balanceOf(carol.address),
+            await rewardToken4.balanceOf(carol.address)];
+            console.log("carol",balances);
       }
 
       await increaseTime(SECONDS_IN_A_YEAR);
@@ -251,11 +269,11 @@ describe("Gauge Proxy:", function () {
         await rewardToken2.balanceOf(alice.address),
         await rewardToken3.balanceOf(alice.address),
         await rewardToken4.balanceOf(alice.address)];
-      console.log(axial.address);
-      console.log(rewardToken1.address);
-      console.log(rewardToken2.address);
-      console.log(rewardToken3.address);
-      console.log(rewardToken4.address);
+      // console.log(axial.address);
+      // console.log(rewardToken1.address);
+      // console.log(rewardToken2.address);
+      // console.log(rewardToken3.address);
+      // console.log(rewardToken4.address);
       console.log(balances);
 
       await increaseTime(SECONDS_IN_A_YEAR);
@@ -269,10 +287,10 @@ describe("Gauge Proxy:", function () {
         await rewardToken3.balanceOf(alice.address),
         await rewardToken4.balanceOf(alice.address)];
 
-      console.log(balances);
+      // console.log(balances);
 
       let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
-      console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
+      // console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
 
     }
 

@@ -75,7 +75,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     mapping (address => uint256) public periodFinish;
     mapping (address => uint256) public lastUpdateTime;
 
-    /// Primary reward token rate
+    /// Rewards per second for each reward token
     mapping (address => uint256) public rewardRates;
 
     // token => amount
@@ -91,7 +91,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     uint256 private _totalLPTokenSupply;
 
     /// boost-adjusted supply of the reward tokens
-    mapping (address => uint256) public derivedSupply;
+    //mapping (address => uint256) public derivedSupply;
+
+    uint256 totalBoost; // The sum of all users boost factors!
 
     /// user => LP token balance
     mapping(address => uint256) private _lpTokenBalances;
@@ -107,16 +109,31 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     // ==================== Modifiers ==================== //
 
     // Affects all rewards
-    modifier updateReward(address account) {
-        for (uint i = 0; i < rewardTokens.length; ++i) {
+    modifier updateRewards(address account) {
+        for (uint256 i = 0; i < rewardTokens.length; ++i) { // For each reward token
             address token = rewardTokens[i];
-            //lastUpdateTime[token] = lastTimeRewardApplicable(token);
-            rewardPerTokenStored[token] = rewardPerToken(token);
-            if (account != address(0)) {
-                rewards[account][token] = earned(account, token);
-                userRewardPerTokenPaid[account][token] = rewardPerTokenStored[token];
-            }
+            rewardPerTokenStored[token] = rewardPerToken(token); // Update total rewards available for token
             lastUpdateTime[token] = lastTimeRewardApplicable(token);
+            if (account != address(0)) {
+                rewards[account][token] = earned(account, token); // Update users allocation out of total rewards for token
+                userRewardPerTokenPaid[account][token] = rewardPerTokenStored[token]; // Keep track of what we have allocated so far for the user
+            }
+        }
+        _; // execute function this modifier is attached to
+        if (account != address(0)) {
+            kick(account); // update the total boost factor based on the users current status
+        }
+    }
+
+    // Affects only one reward
+    modifier updateReward(address account, uint256 tokenIndex) {
+        require(tokenIndex < rewardTokens.length, "Invalid token index");
+        address token = rewardTokens[tokenIndex];
+        rewardPerTokenStored[token] = rewardPerToken(token);
+        lastUpdateTime[token] = lastTimeRewardApplicable(token);
+        if (account != address(0)) {
+            rewards[account][token] = earned(account, token);
+            userRewardPerTokenPaid[account][token] = rewardPerTokenStored[token];
         }
         _;
         if (account != address(0)) {
@@ -166,7 +183,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         return rewardTokens.length;
     }
 
-    function partnerDepositRewardTokens(address tokenAddress, uint256 amount, uint256 rewardPerSec) external updateReward(address(0)) {
+    function partnerDepositRewardTokens(address tokenAddress, uint256 amount, uint256 rewardPerSec) external updateRewards(address(0)) {
         require(tokenPartners[tokenAddress] == msg.sender, "You do not have the right.");
         require (rewardPerSec != 0, "Cannot set reward rate to 0");
         IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), amount);
@@ -182,11 +199,11 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         emit RewardAdded(amount, tokenAddress);
     }
 
-    /// @notice return how many of our reward tokens is the user receiving per lp token
+    /// @notice return how many of our reward tokens is the user receiving per lp token at the current point in time
     /// @dev (e.g. how many teddy or axial is received per AC4D token)
     function rewardPerToken(address token) public view returns (uint256) {
-        if (_totalLPTokenSupply == 0 || derivedSupply[token] == 0) {
-            console.log(derivedSupply[token]);
+        //if (_totalLPTokenSupply == 0 || derivedSupply[token] == 0) {
+        if (_totalLPTokenSupply == 0 || totalBoost == 0) {
             return rewardPerTokenStored[token];
         }
 
@@ -200,12 +217,17 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // Debug
         // uint256 rPT = rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
         // console.log("rPT=", rPT);
-        uint256 r = lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18);
-        console.log("r=", r);
-        uint256 ds = derivedSupply[token];
-        console.log("ds=", ds);
 
-        return rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
+        // uint256 r = lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18);
+        // console.log("r=", r);
+        // uint256 ds = derivedSupply[token];
+        // console.log("ds=", ds);
+
+        //return rewardPerTokenStored[token].add(lastTimeRewardApplicable(token).sub(lastUpdateTime[token]).mul(rewardRates[token]).mul(1e18).div(derivedSupply[token]));
+        return rewardPerTokenStored[token] + 
+        ((lastTimeRewardApplicable(token) - lastUpdateTime[token]) * rewardRates[token] * 1e18 /
+        // derivedSupply[token]);
+        totalBoost);
     }
 
     /// @notice getting the reward to be received for primary tokens respective staking period
@@ -231,12 +253,18 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         // uint256 e = boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
         // console.log("e=", e);
 
-        uint256 uRPTP = userRewardPerTokenPaid[account][token];
-        console.log("uRPTP=", uRPTP);
+        // uint256 uRPTP = userRewardPerTokenPaid[account][token];
+        // console.log("uRPTP=", uRPTP);
 
-        return userShare(account).mul(boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token])).div(1e18);
+        // console.log(token);
+        // console.log(rewards[account][token]);
+
+        //return userShare(account).mul(boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token])).div(1e18);
 
         //return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
+
+        return (boostFactors[account] * (rewardPerToken(token) - userRewardPerTokenPaid[account][token]) / 
+               1e18) + rewards[account][token];
     }
 
     /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
@@ -261,6 +289,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     // returns the users share of the total LP supply * 1e18
     function userShare(address account) public view returns (uint256) {
+        if (_totalLPTokenSupply == 0) return 0;
         return _lpTokenBalances[account] * 1e18 / _totalLPTokenSupply;
     }
 
@@ -278,41 +307,53 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
         uint256 _adjusted;
         if (totalVeAxial != 0) {
+            // N * uV / V
+            // i.e. 100 * 0.5 = 50 if user has 50% veAxial
             _adjusted = (_totalLPTokenSupply.mul(usersVeAxialBalance).div(totalVeAxial));
         }
 
+        // (bal + adj) / bal
+        // i.e. (50 + 50) / 50 = 2 if user has 50% LP and 50% veAxial
         return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
     }
 
+    // function kick(address account) public {
+    //     uint256 _boostFactor = boostFactors[account];
+
+    //     for (uint256 i = 0; i < rewardTokens.length; ++i) {
+    //         address token = rewardTokens[i];
+    //         //console.log(token);
+    //         //console.log("account=", account);
+    //         //console.log("derivedSupply=", derivedSupply[token]);
+    //         //console.log("boostFactor=", _boostFactor);
+    //         if (derivedSupply[token] > 0) {
+    //             derivedSupply[token] = derivedSupply[token].sub(_boostFactor);
+    //         }
+    //     }
+
+    //     _boostFactor = boostFactor(account);
+    //     boostFactors[account] = _boostFactor;
+
+    //     for (uint256 i = 0; i < rewardTokens.length; ++i) {
+    //         address token = rewardTokens[i];
+    //         //console.log(token);
+    //         derivedSupply[token] = derivedSupply[token].add(_boostFactor);
+    //         // console.log(i, derivedSupply[token]);
+    //     }
+    // }
+
+    // This function should be called something like "updateTotalBoostFactor"
     function kick(address account) public {
-        uint256 _boostFactor = boostFactors[account];
-
-        for (uint256 i = 0; i < rewardTokens.length; ++i) {
-            address token = rewardTokens[i];
-            //console.log(token);
-            //console.log("account=", account);
-            //console.log("derivedSupply=", derivedSupply[token]);
-            //console.log("boostFactor=", _boostFactor);
-            if (derivedSupply[token] > 0) {
-                derivedSupply[token] = derivedSupply[token].sub(_boostFactor);
-            }
-        }
-
-        _boostFactor = boostFactor(account);
-        boostFactors[account] = _boostFactor;
-
-        for (uint256 i = 0; i < rewardTokens.length; ++i) {
-            address token = rewardTokens[i];
-            //console.log(token);
-            derivedSupply[token] = derivedSupply[token].add(_boostFactor);
-        }
+        totalBoost -= boostFactors[account]; // Subtract users boost factor from total
+        boostFactors[account] = boostFactor(account); // Update users boost factor
+        totalBoost += boostFactors[account]; // Add new boost factor to total
     }
 
     /// @notice internal deposit function
     function _deposit(uint256 amount, address account)
         internal
         nonReentrant
-        updateReward(account)
+        updateRewards(account)
     {
         require(amount > 0, "Cannot stake 0");
         poolToken.safeTransferFrom(account, address(this), amount);
@@ -343,7 +384,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     function _withdraw(uint256 amount)
         internal
         nonReentrant
-        updateReward(msg.sender)
+        updateRewards(msg.sender)
     {
         poolToken.safeTransfer(msg.sender, amount);
         require(amount > 0, "Cannot withdraw 0");
@@ -366,15 +407,15 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     function getReward(uint256 tokenIndex)
         public
         nonReentrant
-        updateReward(msg.sender)
+        updateReward(msg.sender, tokenIndex)
     {
         address token = rewardTokens[tokenIndex];
         require(token != address(0), "Reward token does not exist");
         uint256 reward = rewards[msg.sender][token];
-        console.log("reward=", reward);
-        // DEBUG
-        uint256 _reward = IERC20(token).balanceOf(address(this));
-        console.log("balance=", _reward);
+        // console.log("reward=", reward);
+        // // DEBUG
+        // uint256 _reward = IERC20(token).balanceOf(address(this));
+        // console.log("balance=", _reward);
         if (reward > 0) {
             IERC20(token).safeTransfer(msg.sender, reward);
             rewards[msg.sender][token] = 0;
@@ -406,7 +447,7 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     function notifyRewardAmount(uint256 reward)
         external
         onlyDistribution
-        updateReward(address(0))
+        updateRewards(address(0))
     {
         address token = rewardTokens[0];
         IERC20(token).safeTransferFrom(

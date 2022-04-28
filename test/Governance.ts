@@ -159,7 +159,50 @@ describe("Governance", () => {
     await voteGovernance.connect(alice).vote(0, 0);
 
     let receipt = await voteGovernance.getReceipt(0, aliceAddr);
-    console.log(receipt);
+    //console.log(receipt);
+
+    let proposal = await voteGovernance.proposals(0);
+    // console.log(proposal);
+
+    let votes = await voteGovernance.getProposalVotes(0);
+    // console.log("votes=", votes);
+    expect(votes[0]).to.eq(BigNumber.from("249999992050773300750000"));
+  })
+
+  it("Users can vote for multiple choice proposals", async() => {
+    await axialToken.connect(alice).approve(stakingVe.address, NUM_VOTES_REQUIRED)
+    await stakingVe.connect(alice).stake(SECONDS_IN_A_YEAR * 2, NUM_VOTES_REQUIRED, false);
+
+    let actionApproveSAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingVe.address, 500]);
+    let actionStakeSAXIAL = stakingVe.interface.encodeFunctionData("stake", [SECONDS_IN_A_YEAR * 2, 500, false]);
+    let actionApproveVEAXIAL = axialToken.interface.encodeFunctionData("approve", [stakingAc.address, 500]);
+    let actionStakeVEAXIAL = stakingAc.interface.encodeFunctionData("stake", [500]);
+
+    let labels = ["Governance Approve 500 for Staked Axial", 
+                  "Governance Stake 500 Axial into sAxial", 
+                  "Governance Approve 500 for veAxial", 
+                  "Governance Stake 500 Axial into veAxial"];
+
+    let targets = [axialToken.address, stakingVe.address, axialToken.address, stakingAc.address];
+    let values = [0, 0, 0, 0];
+    let data = [actionApproveSAXIAL, actionStakeSAXIAL, actionApproveVEAXIAL, actionStakeVEAXIAL];
+
+    let executionContexts = await voteGovernance.connect(alice).constructProposalExecutionContexts(labels, targets, values, data);
+    let metaData = await voteGovernance.connect(alice).constructProposalMetadata("Test Title", "Test Metadata", SECONDS_IN_A_WEEK, false);
+
+    await voteGovernance.connect(alice).propose(metaData, executionContexts);
+
+    await voteGovernance.connect(alice).vote(0, 2);
+
+    let receipt = await voteGovernance.getReceipt(0, aliceAddr);
+    // console.log(receipt);
+
+    let proposal = await voteGovernance.proposals(0);
+    // console.log(proposal);
+
+    let votes = await voteGovernance.getProposalVotes(0);
+    //console.log("votes=", votes);
+    expect(votes[2]).to.eq(BigNumber.from("249999992050773300750000"));
   })
 
 })

@@ -10,7 +10,7 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "hardhat/console.sol";
+// import "hardhat/console.sol";
 
 interface IsAxial {
   function balanceOf(address _account) external view returns (uint256);
@@ -32,14 +32,14 @@ contract Governance is ReentrancyGuard, Ownable {
     uint256 public constant EXPIRATION_PERIOD = 14 days;
 
     /// @notice The required minimum number of votes in support of a proposal for it to succeed
-    uint256 public quorumVotes = 300_000e18;
-    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000e18;
-    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000e18;
+    uint256 public quorumVotes = 300_000;
+    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000;
+    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000;
 
     /// @notice The minimum number of votes required for an account to create a proposal
-    uint256 public proposalThreshold = 100_000e18;
-    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000e18;
-    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000e18;
+    uint256 public proposalThreshold = 100_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000;
 
     /// @notice The total number of proposals
     uint256 public proposalCount;
@@ -113,6 +113,10 @@ contract Governance is ReentrancyGuard, Ownable {
     /// @dev This token must not be tradeable
     constructor(address _sAXIAL) {
         sAXIAL = IsAxial(_sAXIAL);
+    }
+
+    function getProposalVotes(uint256 proposalId) public view returns (uint256[] memory) {
+        return proposals[proposalId].votes;
     }
 
     // Setters
@@ -318,6 +322,17 @@ contract Governance is ReentrancyGuard, Ownable {
         }
 
         Proposal storage newProposal = proposals[proposalCount];
+        // newProposal.votes = new uint256[](0);
+
+        // if (!_metaData.isBoolean) {
+        //     for (uint256 i = 0; i < _executionContexts.length; ++i) {
+        //         newProposal.votes.push(0); // A, B, C ...
+        //     }
+        // } else {
+        //     newProposal.votes.push(0); // No
+        //     newProposal.votes.push(0); // Yes
+        // }
+
         newProposal.title = _metaData.title;
         newProposal.metadata = _metaData.metadata;
         newProposal.proposer = msg.sender;
@@ -358,7 +373,6 @@ contract Governance is ReentrancyGuard, Ownable {
         Receipt storage receipt = receipts[_proposalId][msg.sender];
 
         uint256 votes = sAXIAL.balanceOf(msg.sender);
-        console.log("votes=", votes);
 
         // Remove any previous votes if the user cast them already
         if (receipt.hasVoted) {

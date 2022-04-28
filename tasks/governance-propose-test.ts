@@ -8,7 +8,7 @@ task("governance-propose-test", "Creates a test proposal for Governance")
     .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
     const {ethers} = env; // get ethers from environment
 
-    const governance = (await env.ethers.getContractAt("Governance", "0xe9F07E9129FB2647A7d5F44EFF58fE973446EdD8")) as Governance;
+    const governance = (await env.ethers.getContractAt("Governance", "0x5a8d4B5Ca18362e3bD9e7adD21Fae930a6De4A29")) as Governance;
     const axial = (await env.ethers.getContractAt("ERC20", "0x0708f10f657b16abe18954361e96a641b217648b")) as ERC20;
 
     const signers = await ethers.getSigners();
