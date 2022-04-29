@@ -35,7 +35,10 @@ let bob: SignerWithAddress;
 let carol: SignerWithAddress;
 let dave: SignerWithAddress;
 
+const ALLOCATED_AXIAL_FOR_VEAXIAL = 5000000;
+const ALLOCATED_AXIAL_FOR_SAXIAL = 5000000;
 const ALLOCATED_FOR_USERS = 5000000;
+//const ALLOCATED_FOR_USERS = BigNumber.from("1000000000000000000");
 const SECONDS_IN_A_WEEK = 60 * 60 * 24 * 7;
 const SECONDS_IN_A_WEEK_1e18 : BigNumber = BigNumber.from(SECONDS_IN_A_WEEK).mul(BigNumber.from("1000000000000000000"));
 
@@ -170,10 +173,10 @@ describe("Gauge Proxy:", function () {
       let rewardToken2 = await new ERC20TokenMock__factory(dave).deploy("rewardToken2", "REWARD2");
       let rewardToken3 = await new ERC20TokenMock__factory(dave).deploy("rewardToken3", "REWARD3");
       let rewardToken4 = await new ERC20TokenMock__factory(dave).deploy("rewardToken4", "REWARD4");
-      await rewardToken1.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
-      await rewardToken2.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
-      await rewardToken3.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
-      await rewardToken4.connect(dave).mint(dave.address, ALLOCATED_FOR_USERS);
+      await rewardToken1.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken2.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken3.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken4.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
 
       for (let i = 0; i < numGauges.toNumber(); ++i) {
         let indexArray = [];
@@ -192,23 +195,23 @@ describe("Gauge Proxy:", function () {
         await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
         await gauge.connect(carol).depositAll();
 
-        // // Alice is also going to stake into veAxial
-        // await axial.connect(alice).approve(veAxial.address, ALLOCATED_FOR_USERS);
-        // await veAxial.connect(alice).stake(ALLOCATED_FOR_USERS - 100);
+        // Alice is also going to stake into veAxial
+        await axial.connect(alice).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+        await veAxial.connect(alice).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
 
-        // // Carol as well
-        // await axial.connect(carol).approve(veAxial.address, ALLOCATED_FOR_USERS);
-        // await veAxial.connect(carol).stake(ALLOCATED_FOR_USERS - 100);
+        // Carol as well
+        await axial.connect(carol).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+        await veAxial.connect(carol).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
 
         await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken4.address, dave.address);
 
-        await rewardToken1.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken2.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken3.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
-        await rewardToken4.connect(dave).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        await rewardToken1.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken2.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken3.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken4.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
 
         await gauge.connect(dave).partnerDepositRewardTokens(rewardToken1.address, SECONDS_IN_A_WEEK, 1);
         await gauge.connect(dave).partnerDepositRewardTokens(rewardToken2.address, SECONDS_IN_A_WEEK, 1);
@@ -249,6 +252,8 @@ describe("Gauge Proxy:", function () {
             await rewardToken3.balanceOf(carol.address),
             await rewardToken4.balanceOf(carol.address)];
             console.log("carol",balances);
+
+            console.log("end of week", i+1);
       }
 
       await increaseTime(SECONDS_IN_A_YEAR);
@@ -376,10 +381,10 @@ async function setupTest(): Promise<void> {
   await gaugeProxy.connect(deployer).depositDummyToken();
 
   // Mint axial
-  await axial.connect(masterChefSigner).mint(alice.address, ALLOCATED_FOR_USERS);
-  await axial.connect(masterChefSigner).mint(bob.address, ALLOCATED_FOR_USERS);
-  await axial.connect(masterChefSigner).mint(carol.address, ALLOCATED_FOR_USERS);
-  await axial.connect(masterChefSigner).mint(dave.address, ALLOCATED_FOR_USERS);
+  await axial.connect(masterChefSigner).mint(alice.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
+  await axial.connect(masterChefSigner).mint(bob.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
+  await axial.connect(masterChefSigner).mint(carol.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
+  await axial.connect(masterChefSigner).mint(dave.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
 
   // Give out some pool tokens
   await testToken.connect(deployer).mint(alice.address, ALLOCATED_FOR_USERS);
@@ -395,7 +400,7 @@ async function stakeAndVote(
 ): Promise<void> {
 
   const userBalanceBeforeStake = await axial.balanceOf(user.address);
-  expect(userBalanceBeforeStake).to.eq(await ALLOCATED_FOR_USERS);
+  //expect(userBalanceBeforeStake).to.eq(await ALLOCATED_FOR_USERS);
 
   // Approve max spend of users axial
   await axial.connect(user).approve(sAxial.address, await axial.maxSupply());
@@ -404,10 +409,10 @@ async function stakeAndVote(
   const powerBeforeStake = await sAxial.getPower(user.address);
   expect(powerBeforeStake).to.eq(0);
 
-  await sAxial.connect(user).stake(SECONDS_IN_A_YEAR, userBalanceBeforeStake, false);
+  await sAxial.connect(user).stake(SECONDS_IN_A_YEAR, ALLOCATED_AXIAL_FOR_SAXIAL, false);
 
   const userBalanceAfterStake = await axial.balanceOf(user.address);
-  expect(userBalanceAfterStake).to.eq(userBalanceBeforeStake.sub(userBalanceBeforeStake));
+  expect(userBalanceAfterStake).to.eq(userBalanceBeforeStake.sub(ALLOCATED_AXIAL_FOR_SAXIAL));
 
   // Check user has some voting user
   const powerAfterStake = await sAxial.getPower(user.address);

@@ -263,8 +263,9 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
         //return boostFactors[account].mul(rewardPerToken(token).sub(userRewardPerTokenPaid[account][token])).div(1e18).add(rewards[account][token]);
 
-        return (boostFactors[account] * (rewardPerToken(token) - userRewardPerTokenPaid[account][token]) / 
-               1e18) + rewards[account][token];
+        // return (boostFactors[account] * (rewardPerToken(token) - userRewardPerTokenPaid[account][token]) / 
+        //        1e18) + rewards[account][token];
+        return (boostFactors[account] * (rewardPerToken(token) - userRewardPerTokenPaid[account][token]) / 1e18) + rewards[account][token];
     }
 
     /// @notice This function is to allow us to update the gaugeProxy without resetting the old gauges.
@@ -309,12 +310,20 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         if (totalVeAxial != 0) {
             // N * uV / V
             // i.e. 100 * 0.5 = 50 if user has 50% veAxial
-            _adjusted = (_totalLPTokenSupply.mul(usersVeAxialBalance).div(totalVeAxial));
+           // _adjusted = (_totalLPTokenSupply.mul(usersVeAxialBalance).div(totalVeAxial));
+            //console.log("adjusted=",_adjusted);
+            _adjusted = (_totalLPTokenSupply * usersVeAxialBalance) / totalVeAxial;
         }
 
         // (bal + adj) / bal
         // i.e. (50 + 50) / 50 = 2 if user has 50% LP and 50% veAxial
-        return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
+        //console.log("boostFactor=",(_userBalanceInGauge + _adjusted) / _userBalanceInGauge);
+        //return (_userBalanceInGauge + _adjusted) / _userBalanceInGauge;
+        // console.log("boostFactor=", (_totalLPTokenSupply * (_userBalanceInGauge + _adjusted)) / _userBalanceInGauge);
+        // return (_totalLPTokenSupply * (_userBalanceInGauge + _adjusted)) / _userBalanceInGauge;
+        //return ((_userBalanceInGauge + _adjusted) * 1e18) / _userBalanceInGauge;
+        console.log("User Boosted Share =", ((_lpTokenBalances[account] + usersVeAxialBalance) * 1e18) / (_totalLPTokenSupply + totalVeAxial));
+        return ((_lpTokenBalances[account] + usersVeAxialBalance) * 1e18) / (_totalLPTokenSupply + totalVeAxial);
     }
 
     // function kick(address account) public {
@@ -412,10 +421,10 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         address token = rewardTokens[tokenIndex];
         require(token != address(0), "Reward token does not exist");
         uint256 reward = rewards[msg.sender][token];
-        // console.log("reward=", reward);
         // // DEBUG
-        // uint256 _reward = IERC20(token).balanceOf(address(this));
-        // console.log("balance=", _reward);
+        console.log("reward=", reward);
+        uint256 _reward = IERC20(token).balanceOf(address(this));
+        console.log("balance=", _reward);
         if (reward > 0) {
             IERC20(token).safeTransfer(msg.sender, reward);
             rewards[msg.sender][token] = 0;
