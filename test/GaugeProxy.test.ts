@@ -141,12 +141,20 @@ describe("Gauge Proxy:", function () {
       expect(userTokenVotesAfter).to.eq(0);
     });
 
-    it.only("Rewards should be distributed to users based on their weights", async function() {
+    it("Two users with the same pool share and veaxial share should receive equal rewards", async function () {
       let aliceBalance = axial.balanceOf(alice.address);
 
       await stakeAndVote(alice, 100);
-      await stakeAndVote(bob, 100);
+      //await stakeAndVote(bob, 100);
       await stakeAndVote(carol, 100);
+
+      // Alice is also going to stake into veAxial
+      await axial.connect(alice).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(alice).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
+
+      // Carol as well
+      await axial.connect(carol).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(carol).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
 
       await increaseTime(SECONDS_IN_A_WEEK);
 
@@ -185,23 +193,17 @@ describe("Gauge Proxy:", function () {
         // console.log("gaugeAddr=", gaugeAddr);
 
         let gaugeAxialTokens = await axial.balanceOf(gaugeAddr);
-        console.log("gaugeAxialTokens=", gaugeAxialTokens);
+        // console.log("gaugeAxialTokens=", gaugeAxialTokens);
 
         // Alice is gonna deposit some LP tokens into the gauge
         await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("aliceAxial=",await axial.balanceOf(alice.address));
         await gauge.connect(alice).depositAll();
 
         // Carol as well
         await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("carolAxial=",await axial.balanceOf(carol.address));
         await gauge.connect(carol).depositAll();
-
-        // Alice is also going to stake into veAxial
-        await axial.connect(alice).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
-        await veAxial.connect(alice).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
-
-        // Carol as well
-        await axial.connect(carol).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
-        await veAxial.connect(carol).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
 
         await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
         await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
@@ -220,85 +222,301 @@ describe("Gauge Proxy:", function () {
 
         let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
 
-      await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
-      //await gauge.connect(alice).depositAll();
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        //await gauge.connect(alice).depositAll();
 
-      let rewardTokensAddr = [];
-      for (let i = 0; i < rewardTokens.toNumber(); ++i) {
-        rewardTokensAddr.push(await gauge.connect(alice).rewardTokens(i));
+        let rewardTokensAddr = [];
+        for (let i = 0; i < rewardTokens.toNumber(); ++i) {
+          rewardTokensAddr.push(await gauge.connect(alice).rewardTokens(i));
+        }
+        // console.log(rewardTokensAddr);
+
+        let aliceBalances : BigNumber[] = [];
+        let carolBalances : BigNumber[] = [];
+
+        for (let i = 0; i < 7; ++i) {
+          await increaseTime(SECONDS_IN_A_DAY);
+          await gauge.connect(alice).getAllRewards();
+          await gauge.connect(carol).getAllRewards(); // carol too
+
+          // let ownership = await gauge.connect(alice).userShare(alice.address);
+          // console.log("Alice Ownership=", ownership);
+
+          aliceBalances = [
+            await axial.balanceOf(alice.address),
+            await rewardToken1.balanceOf(alice.address),
+            await rewardToken2.balanceOf(alice.address),
+            await rewardToken3.balanceOf(alice.address),
+            await rewardToken4.balanceOf(alice.address)];
+            // console.log("alice",aliceBalances);
+
+            carolBalances = [
+              await axial.balanceOf(carol.address),
+              await rewardToken1.balanceOf(carol.address),
+              await rewardToken2.balanceOf(carol.address),
+              await rewardToken3.balanceOf(carol.address),
+              await rewardToken4.balanceOf(carol.address)];
+              // console.log("carol",carolBalances);
+
+              // console.log("end of week", i+1);
+        }
+
+        let dot = await getMatrixDotIgnoringWei(aliceBalances, carolBalances);
+        let norm = await getMatrixNormIgnoringWei(aliceBalances);
+        let likeNess = dot.valueOf() / norm.valueOf();
+        // console.log("Alice -> Carol differential =", await getMatrixDotIgnoringWei(aliceBalances, carolBalances));
+        // console.log("Alice -> Carol differential =", likeNess);
+        expect(likeNess).to.be.lessThan(0.01);
       }
-      console.log(rewardTokensAddr);
-
-      for (let i = 0; i < 7; ++i) {
-        await increaseTime(SECONDS_IN_A_DAY);
-        await gauge.connect(alice).getAllRewards();
-        await gauge.connect(carol).getAllRewards(); // carol too
-
-        // let ownership = await gauge.connect(alice).userShare(alice.address);
-        // console.log("Alice Ownership=", ownership);
-
-        let balances = [
-          await axial.balanceOf(alice.address),
-          await rewardToken1.balanceOf(alice.address),
-          await rewardToken2.balanceOf(alice.address),
-          await rewardToken3.balanceOf(alice.address),
-          await rewardToken4.balanceOf(alice.address)];
-          console.log("alice",balances);
-
-          balances = [
-            await axial.balanceOf(carol.address),
-            await rewardToken1.balanceOf(carol.address),
-            await rewardToken2.balanceOf(carol.address),
-            await rewardToken3.balanceOf(carol.address),
-            await rewardToken4.balanceOf(carol.address)];
-            console.log("carol",balances);
-
-            console.log("end of week", i+1);
-      }
-
-      await increaseTime(SECONDS_IN_A_YEAR);
-
-      await gaugeProxy.connect(deployer).preDistribute();
-      await gaugeProxy.connect(deployer).distribute(0, numGauges);
-
-      for (let i = 0; i < rewardTokens.toNumber(); ++i) {
-        indexArray.push(i);
-      }
-
-      await gauge.connect(alice).getAllRewards();
-
-
-      let balances = [
-        await axial.balanceOf(alice.address),
-        await rewardToken1.balanceOf(alice.address),
-        await rewardToken2.balanceOf(alice.address),
-        await rewardToken3.balanceOf(alice.address),
-        await rewardToken4.balanceOf(alice.address)];
-      // console.log(axial.address);
-      // console.log(rewardToken1.address);
-      // console.log(rewardToken2.address);
-      // console.log(rewardToken3.address);
-      // console.log(rewardToken4.address);
-      console.log(balances);
-
-      await increaseTime(SECONDS_IN_A_YEAR);
-      //await gaugeProxy.connect(deployer).preDistribute();
-      //await gaugeProxy.connect(deployer).distribute(0, numGauges);
-      await gauge.connect(alice).getAllRewards();
-      balances = [
-        await axial.balanceOf(alice.address),
-        await rewardToken1.balanceOf(alice.address),
-        await rewardToken2.balanceOf(alice.address),
-        await rewardToken3.balanceOf(alice.address),
-        await rewardToken4.balanceOf(alice.address)];
-
-      // console.log(balances);
 
       let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
       // console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
+    });
 
-    }
+    it("Two users with the same pool share and 1:2 veaxial share should receive 1:2 rewards", async function () {
+      let aliceBalance = axial.balanceOf(alice.address);
 
+      await stakeAndVote(alice, 100);
+      //await stakeAndVote(bob, 100);
+      await stakeAndVote(carol, 100);
+
+      // Alice is also going to stake into veAxial
+      await axial.connect(alice).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(alice).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
+
+      // Carol as well
+      await axial.connect(carol).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(carol).stake(ALLOCATED_AXIAL_FOR_VEAXIAL / 2);
+
+      await increaseTime(SECONDS_IN_A_WEEK);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      let numGauges = await gaugeProxy.connect(deployer).length();
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      let axialPerSec = await masterChef.connect(deployer).axialPerSec();
+      let poolInfo = await masterChef.connect(deployer).poolInfo(poolID);
+      let gaugeProxyUserInfo = await masterChef.userInfo(poolID, gaugeProxy.address);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      numGauges = await gaugeProxy.connect(deployer).length();
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      let tokens = await gaugeProxy.connect(alice).tokens();
+
+      let rewardToken0 = axial;
+      let rewardToken1 = await new ERC20TokenMock__factory(dave).deploy("rewardToken1", "REWARD1");
+      let rewardToken2 = await new ERC20TokenMock__factory(dave).deploy("rewardToken2", "REWARD2");
+      let rewardToken3 = await new ERC20TokenMock__factory(dave).deploy("rewardToken3", "REWARD3");
+      let rewardToken4 = await new ERC20TokenMock__factory(dave).deploy("rewardToken4", "REWARD4");
+      await rewardToken1.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken2.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken3.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken4.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+
+      for (let i = 0; i < numGauges.toNumber(); ++i) {
+        let indexArray = [];
+        let gaugeAddr = await gaugeProxy.getGauge(tokens[i]);
+        let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
+
+        let gaugeAxialTokens = await axial.balanceOf(gaugeAddr);
+        // console.log("gaugeAxialTokens=", gaugeAxialTokens);
+
+        // Alice is gonna deposit some LP tokens into the gauge
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("aliceAxial=",await axial.balanceOf(alice.address));
+        await gauge.connect(alice).depositAll();
+
+        // Carol as well
+        await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("carolAxial=",await axial.balanceOf(carol.address));
+        await gauge.connect(carol).depositAll();
+
+        await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken4.address, dave.address);
+
+        await rewardToken1.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken2.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken3.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken4.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken1.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken2.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken3.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken4.address, SECONDS_IN_A_WEEK, 1);
+
+        let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
+
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+
+        let rewardTokensAddr = [];
+        for (let i = 0; i < rewardTokens.toNumber(); ++i) {
+          rewardTokensAddr.push(await gauge.connect(alice).rewardTokens(i));
+        }
+        // console.log(rewardTokensAddr);
+
+        let aliceBalances : BigNumber[] = [];
+        let carolBalances : BigNumber[] = [];
+
+        for (let i = 0; i < 7; ++i) {
+          await increaseTime(SECONDS_IN_A_DAY);
+          await gauge.connect(alice).getAllRewards();
+          await gauge.connect(carol).getAllRewards(); // carol too
+
+          aliceBalances = [
+            await axial.balanceOf(alice.address),
+            await rewardToken1.balanceOf(alice.address),
+            await rewardToken2.balanceOf(alice.address),
+            await rewardToken3.balanceOf(alice.address),
+            await rewardToken4.balanceOf(alice.address)];
+            // console.log("alice",aliceBalances);
+
+            carolBalances = [
+              await axial.balanceOf(carol.address),
+              await rewardToken1.balanceOf(carol.address),
+              await rewardToken2.balanceOf(carol.address),
+              await rewardToken3.balanceOf(carol.address),
+              await rewardToken4.balanceOf(carol.address)];
+              // console.log("carol",carolBalances);
+
+              // console.log("end of week", i+1);
+        }
+
+        let dot = await getMatrixDotIgnoringWei(aliceBalances, carolBalances);
+        //console.log("dot product = ", dot);
+        let norm = await getMatrixNormIgnoringWei(aliceBalances);
+        let likeNess = dot.valueOf() / norm.valueOf();
+        // console.log("Alice -> Carol differential =", likeNess);
+        expect(Math.abs(likeNess - 0.5)).to.be.lessThan(0.01);
+      }
+
+      let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
+      // console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
+    });
+
+    it("Two users with 1:2 pool share and 1:2 veaxial share should receive 1:4 rewards", async function () {
+      let aliceBalance = axial.balanceOf(alice.address);
+
+      await stakeAndVote(alice, 100);
+      //await stakeAndVote(bob, 100);
+      await stakeAndVote(carol, 100);
+
+      // Alice is also going to stake into veAxial
+      await axial.connect(alice).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(alice).stake(ALLOCATED_AXIAL_FOR_VEAXIAL);
+
+      // Carol as well
+      await axial.connect(carol).approve(veAxial.address, ALLOCATED_AXIAL_FOR_VEAXIAL);
+      await veAxial.connect(carol).stake(ALLOCATED_AXIAL_FOR_VEAXIAL / 2);
+
+      await increaseTime(SECONDS_IN_A_WEEK);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      let numGauges = await gaugeProxy.connect(deployer).length();
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      let axialPerSec = await masterChef.connect(deployer).axialPerSec();
+      let poolInfo = await masterChef.connect(deployer).poolInfo(poolID);
+      let gaugeProxyUserInfo = await masterChef.userInfo(poolID, gaugeProxy.address);
+
+      await gaugeProxy.connect(deployer).preDistribute();
+      numGauges = await gaugeProxy.connect(deployer).length();
+      await gaugeProxy.connect(deployer).distribute(0, numGauges);
+
+      let tokens = await gaugeProxy.connect(alice).tokens();
+
+      let rewardToken0 = axial;
+      let rewardToken1 = await new ERC20TokenMock__factory(dave).deploy("rewardToken1", "REWARD1");
+      let rewardToken2 = await new ERC20TokenMock__factory(dave).deploy("rewardToken2", "REWARD2");
+      let rewardToken3 = await new ERC20TokenMock__factory(dave).deploy("rewardToken3", "REWARD3");
+      let rewardToken4 = await new ERC20TokenMock__factory(dave).deploy("rewardToken4", "REWARD4");
+      await rewardToken1.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken2.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken3.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+      await rewardToken4.connect(dave).mint(dave.address, SECONDS_IN_A_WEEK);
+
+      for (let i = 0; i < numGauges.toNumber(); ++i) {
+        let indexArray = [];
+        let gaugeAddr = await gaugeProxy.getGauge(tokens[i]);
+        let gauge = await ethers.getContractAt("Gauge", gaugeAddr, dave);
+
+        let gaugeAxialTokens = await axial.balanceOf(gaugeAddr);
+        // console.log("gaugeAxialTokens=", gaugeAxialTokens);
+
+        // Alice is gonna deposit some LP tokens into the gauge
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("aliceAxial=",await axial.balanceOf(alice.address));
+        await gauge.connect(alice).depositAll();
+
+        // Carol as well
+        await testToken.connect(carol).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+        // console.log("carolAxial=",await axial.balanceOf(carol.address));
+        await gauge.connect(carol).deposit(ALLOCATED_FOR_USERS / 2);
+
+        await gauge.connect(deployer).addRewardToken(rewardToken1.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken2.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken3.address, dave.address);
+        await gauge.connect(deployer).addRewardToken(rewardToken4.address, dave.address);
+
+        await rewardToken1.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken2.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken3.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+        await rewardToken4.connect(dave).approve(gaugeAddr, SECONDS_IN_A_WEEK);
+
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken1.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken2.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken3.address, SECONDS_IN_A_WEEK, 1);
+        await gauge.connect(dave).partnerDepositRewardTokens(rewardToken4.address, SECONDS_IN_A_WEEK, 1);
+
+        let rewardTokens = await gauge.connect(alice).getNumRewardTokens();
+
+        await testToken.connect(alice).approve(gaugeAddr, ALLOCATED_FOR_USERS);
+
+        let rewardTokensAddr = [];
+        for (let i = 0; i < rewardTokens.toNumber(); ++i) {
+          rewardTokensAddr.push(await gauge.connect(alice).rewardTokens(i));
+        }
+        // console.log(rewardTokensAddr);
+
+        let aliceBalances : BigNumber[] = [];
+        let carolBalances : BigNumber[] = [];
+
+        for (let i = 0; i < 7; ++i) {
+          await increaseTime(SECONDS_IN_A_DAY);
+          await gauge.connect(alice).getAllRewards();
+          await gauge.connect(carol).getAllRewards(); // carol too
+
+          aliceBalances = [
+            await axial.balanceOf(alice.address),
+            await rewardToken1.balanceOf(alice.address),
+            await rewardToken2.balanceOf(alice.address),
+            await rewardToken3.balanceOf(alice.address),
+            await rewardToken4.balanceOf(alice.address)];
+            // console.log("alice",aliceBalances);
+
+            carolBalances = [
+              await axial.balanceOf(carol.address),
+              await rewardToken1.balanceOf(carol.address),
+              await rewardToken2.balanceOf(carol.address),
+              await rewardToken3.balanceOf(carol.address),
+              await rewardToken4.balanceOf(carol.address)];
+              // console.log("carol",carolBalances);
+
+              // console.log("end of week", i+1);
+        }
+
+        let dot = await getMatrixDotIgnoringWei(aliceBalances, carolBalances);
+        // console.log("dot product = ", dot);
+        let norm = await getMatrixNormIgnoringWei(aliceBalances);
+        let likeNess = dot.valueOf() / norm.valueOf();
+        // console.log("Alice -> Carol differential =", likeNess);
+        expect(Math.abs(likeNess - 0.75)).to.be.lessThan(0.01);
+      }
+
+      let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
+      // console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
     });
   });
 });
@@ -308,12 +526,12 @@ describe("Gauge Proxy:", function () {
 async function setupTest(): Promise<void> {
   [deployer, alice, bob, carol, dave] = await ethers.getSigners();
 
-  console.log("impersonating mcv2 owner");
+  // console.log("impersonating mcv2 owner");
 
   // impersonate owner of MCV2
   let MCV2Owner = await impersonate("0x4980ad7ccb304f7d3c5053aa1131ed1edaf48809");
 
-  console.log("connecting to masterchef");
+  // console.log("connecting to masterchef");
 
   masterChef = new ethers.Contract(masterChefaddr, masterChefABI, MCV2Owner);
 
@@ -362,7 +580,7 @@ async function setupTest(): Promise<void> {
 
   await setBalance(await MCV2Owner.getAddress(), "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
 
-  console.log("adding new pool");
+  // console.log("adding new pool");
   // Add a new pool and give it an allocation point
   //await masterChef.add(1, dummyToken, "0x0000000000000000000000000000000000000000");
   await masterChef.connect(MCV2Owner).add(1, dummyToken, "0x0000000000000000000000000000000000000000");
@@ -370,7 +588,7 @@ async function setupTest(): Promise<void> {
   // Set all pools besides the old one to have no allocation points
   for (let i = 0; i < poolLength - 1; ++i) {
     //await masterChef.set(i, 0, "0x0000000000000000000000000000000000000000", true);
-    console.log("setting old pools to 0");
+    // console.log("setting old pools to 0");
     await masterChef.connect(MCV2Owner).set(i, 0, "0x0000000000000000000000000000000000000000", true);
   }
 
@@ -382,7 +600,7 @@ async function setupTest(): Promise<void> {
 
   // Mint axial
   await axial.connect(masterChefSigner).mint(alice.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
-  await axial.connect(masterChefSigner).mint(bob.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
+  //await axial.connect(masterChefSigner).mint(bob.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
   await axial.connect(masterChefSigner).mint(carol.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
   await axial.connect(masterChefSigner).mint(dave.address, ALLOCATED_AXIAL_FOR_VEAXIAL + ALLOCATED_AXIAL_FOR_SAXIAL);
 
@@ -432,4 +650,61 @@ async function stakeAndVote(
 
   const userTokenVotesAfter = await gaugeProxy.votes(user.address, testTokenAddress);
   expect(userTokenVotesAfter.toNumber()).to.be.greaterThan(0);
+}
+
+// Gets the norm of the differential between two matrices of equal dimension
+// Ignores discrepancies between wei/eth precision by casting wei to eth
+async function getMatrixDotIgnoringWei(
+  matrixA: BigNumber[],
+  matrixB: BigNumber[]
+): Promise<Number> {
+  expect(matrixA.length).to.eq(matrixB.length);
+  const wei = BigNumber.from("1000000000000000000");
+  let norm : BigNumber = BigNumber.from("0");
+  for (let i = 0; i < matrixA.length; ++i) {
+    // n += (a-b)^2
+    if (matrixA[i].gt(wei) && matrixA[i].gt(wei)) {
+      matrixA[i] = matrixA[i].div(wei);
+      matrixB[i] = matrixB[i].div(wei);
+    }
+    norm = norm.add( (matrixA[i].sub(matrixB[i])).mul(matrixA[i].sub(matrixB[i])) );
+  }
+  return Math.sqrt(norm.toNumber());
+}
+
+async function getMatrixNormIgnoringWei(
+  matrixA: BigNumber[]
+): Promise<Number> {
+  const wei = BigNumber.from("1000000000000000000");
+  let norm : BigNumber = BigNumber.from("0");
+  for (let i = 0; i < matrixA.length; ++i) {
+    if (matrixA[i].gt(wei)) {
+      matrixA[i] = matrixA[i].div(wei);
+    }
+    norm = norm.add( (matrixA[i]).mul(matrixA[i]) );
+  }
+  return Math.sqrt(norm.toNumber());
+}
+
+// Gets the norm of the differential between two matrices of equal dimension
+async function getMatrixDot(
+  matrixA: BigNumber[],
+  matrixB: BigNumber[]
+): Promise<Number> {
+  expect(matrixA.length).to.eq(matrixB.length);
+  let norm : BigNumber = BigNumber.from("0");
+  for (let i = 0; i < matrixA.length; ++i) {
+    norm = norm.add( (matrixA[i].sub(matrixB[i])).mul(matrixA[i].sub(matrixB[i])) );
+  }
+  return Math.sqrt(norm.toNumber());
+}
+
+async function getMatrixNorm(
+  matrixA: BigNumber[]
+): Promise<Number> {
+  let norm : BigNumber = BigNumber.from("0");
+  for (let i = 0; i < matrixA.length; ++i) {
+    norm = norm.add( (matrixA[i]).mul(matrixA[i]) );
+  }
+  return Math.sqrt(norm.toNumber());
 }
