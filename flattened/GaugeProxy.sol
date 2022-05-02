@@ -1843,9 +1843,6 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
 
     // ==================== External Dependencies ==================== //
 
-    /// The Axial token contract
-    IERC20 public constant AXIAL = IERC20(0xcF8419A615c57511807236751c0AF38Db4ba3351);
-
     /// Token to allow boosting partner token rewards - VEAXIAL
     AccruingStake public immutable VEAXIAL;
 
@@ -1966,15 +1963,16 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
     }
 
     constructor(
-        address _token,
-        address _governance,
-        address _veaxial
+        address _poolToken,
+        address _owner,
+        address _veAxial,
+        address _primaryRewardToken
     ) {
-        poolToken = IERC20(_token);
+        poolToken = IERC20(_poolToken);
+        governance = _owner;
+        VEAXIAL = AccruingStake(_veAxial);
+        rewardTokens.push(_primaryRewardToken);
         gaugeProxy = msg.sender;
-        governance = _governance;
-        VEAXIAL = AccruingStake(_veaxial);
-        rewardTokens.push(address(AXIAL));
     }
 
     // ==================== Reward Token Logic ==================== //
@@ -2433,7 +2431,7 @@ contract GaugeProxy is ProtocolGovernance {
     function addGauge(address _token) external onlyBenevolent {
         require(gauges[_token] == address(0x0), "exists");
         gauges[_token] = address(
-            new Gauge(_token, governance, address(veAxial))
+            new Gauge(_token, governance, address(veAxial), address(Axial))
         );
         _tokens.push(_token);
     }

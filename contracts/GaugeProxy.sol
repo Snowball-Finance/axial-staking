@@ -216,7 +216,7 @@ contract GaugeProxy is ProtocolGovernance {
     function addGauge(address _token) external onlyBenevolent {
         require(gauges[_token] == address(0x0), "exists");
         gauges[_token] = address(
-            new Gauge(_token, governance, address(veAxial))
+            new Gauge(_token, governance, address(veAxial), address(Axial))
         );
         _tokens.push(_token);
     }
