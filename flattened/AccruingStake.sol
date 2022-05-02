@@ -602,7 +602,6 @@ contract AccruingStake is ReentrancyGuard, Ownable {
     address public stakedToken; // An ERC20 Token to be staked (i.e. Axial)
     string public name; // New asset after staking (i.e. veAxial)
     string public symbol; // New asset symbol after staking (i.e. veAXIAL)
-    //uint256 private AprDenominator = 1 days;  // Timeframe it takes for the user to accrue X tokens
 
     // Info pertaining to users
     uint256 private totalTokensLocked; // Total balance of tokens users have locked
