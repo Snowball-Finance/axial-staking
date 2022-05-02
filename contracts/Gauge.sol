@@ -11,15 +11,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-import "hardhat/console.sol";
-
-// TODO, both primary rewards and extra rewards are contingent upon [boost factor (boostFactor), user balance in gauge] but otherwise share no logic.
-// They do not share the way reward rate is calculated.  Reward rate for Axial is based on a weekly cadence.  Extra rewards are determined by:
-// rewardPerSec[token]
-// If we run out of tokens we need to handle it gracefully!!!!!!!!!
-// TEST FOR RUNNING OUT OF TOKENS, MAKE SURE IT DOESNT CONTINUE TRYING TO DISTRIBUTE THE AUTHORITY TO WITHDRAW ADDITIONAL TOKENS
-// reward tokens should only be "put" into claimable pool if there is in fact a balance.
-
 contract Gauge is ProtocolGovernance, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -265,11 +256,12 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         uint256 totalVeAxial = VEAXIAL.getTotalAccrued();
 
         // Don't divide by zero!
-        uint256 denominator = _totalLPTokenSupply * totalVeAxial;
+        uint256 denominator = _totalLPTokenSupply + totalVeAxial;
         if (denominator == 0) return 0;
 
-        uint256 numerator = (_lpTokenBalances[account] * usersVeAxialBalance) * 1e18;
-        //console.log("User boosted share=", numerator / denominator);
+        // Add users veAxial share to pool share ratio
+        // If numerator and denominator are multiplicative, users will be punished for their relative veAxial balance
+        uint256 numerator = (_lpTokenBalances[account] + usersVeAxialBalance) * 1e18;
         return numerator / denominator;
     }
 
@@ -342,10 +334,6 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
         address token = rewardTokens[tokenIndex];
         require(token != address(0), "Reward token does not exist");
         uint256 reward = rewards[msg.sender][token];
-        // // DEBUG
-        // console.log("reward=", reward);
-        // uint256 _reward = IERC20(token).balanceOf(address(this));
-        // console.log("balance=", _reward);
         if (reward > 0) {
             IERC20(token).safeTransfer(msg.sender, reward);
             rewards[msg.sender][token] = 0;
@@ -385,14 +373,6 @@ contract Gauge is ProtocolGovernance, ReentrancyGuard {
             address(this),
             reward
         );
-        // if (block.timestamp >= periodFinish[token]) {
-        //     rewardRates[token] = reward.div(PRIMARY_REWARD_DURATION);
-        // } else {
-        //     uint256 remaining = periodFinish[token].sub(block.timestamp);
-        //     uint256 leftover = remaining.mul(rewardRates[token]);
-        //     //console.log(PRIMARY_REWARD_DURATION);
-        //     rewardRates[token] = reward.add(leftover).div(PRIMARY_REWARD_DURATION);
-        // }
         rewardRates[token] = reward.div(PRIMARY_REWARD_DURATION);
 
         // Ensure the provided reward amount is not more than the balance in the contract.

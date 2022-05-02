@@ -14,8 +14,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "hardhat/console.sol"; // DEBUG
-
 contract GaugeProxy is ProtocolGovernance {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -43,8 +41,6 @@ contract GaugeProxy is ProtocolGovernance {
     /// @notice max time allowed to pass before distribution (6 hours)
     uint256 public constant DISTRIBUTION_DEADLINE = 21600;
 
-    //uint256 private constant UINT256_MAX = 2**256-1;
-    //uint256 public pid = UINT256_MAX;
     uint256 public pid = 0;
     uint256 public totalWeight;
     uint256 private lockedTotalWeight;
@@ -271,12 +267,10 @@ contract GaugeProxy is ProtocolGovernance {
 
     /// @notice Deposits Axial dummy token into MCAV2
     function depositDummyToken() public {
-        //require(pid < UINT256_MAX, "pid not initialized");
         require(pid != 0, "pid not initialized");
         uint256 _balance = axialDummyToken.balanceOf(address(this));
         axialDummyToken.safeApprove(address(MCAV2), 0);
         axialDummyToken.safeApprove(address(MCAV2), _balance);
-        // console.log("gaugeProxyAxialDummyBalance=", _balance);
         MCAV2.deposit(pid, _balance);
     }
 
@@ -316,8 +310,6 @@ contract GaugeProxy is ProtocolGovernance {
             locktime + DISTRIBUTION_DEADLINE >= block.timestamp,
             "lock expired"
         );
-        // console.log("lockedBalance=", lockedBalance);
-        // console.log("lockedTotalWeight=", lockedTotalWeight);
         if (lockedBalance > 0 && lockedTotalWeight > 0) {
             for (uint256 i = _start; i < _end; i++) {
                 address _token = _tokens[i];
@@ -325,7 +317,6 @@ contract GaugeProxy is ProtocolGovernance {
                 uint256 _reward = lockedBalance.mul(lockedWeights[_token]).div(
                     totalWeight
                 );
-                // console.log("_reward=", _reward);
                 if (_reward > 0) {
                     Axial.safeApprove(_gauge, 0);
                     Axial.safeApprove(_gauge, _reward);

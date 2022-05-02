@@ -396,7 +396,7 @@ describe("Gauge Proxy:", function () {
       // console.log("gaugeProxyAxialBalance=", gaugeProxyAxialBalance);
     });
 
-    it("Two users with 1:2 pool share and 1:2 veaxial share should receive 1:4 rewards", async function () {
+    it("Two users with 1:2 pool share and 1:2 veaxial share should receive 1:2 rewards", async function () {
       let aliceBalance = axial.balanceOf(alice.address);
 
       await stakeAndVote(alice, 100);
@@ -508,11 +508,11 @@ describe("Gauge Proxy:", function () {
         }
 
         let dot = await getMatrixDotIgnoringWei(aliceBalances, carolBalances);
-        // console.log("dot product = ", dot);
+         //console.log("dot product = ", dot);
         let norm = await getMatrixNormIgnoringWei(aliceBalances);
         let likeNess = dot.valueOf() / norm.valueOf();
-        // console.log("Alice -> Carol differential =", likeNess);
-        expect(Math.abs(likeNess - 0.75)).to.be.lessThan(0.01);
+         //console.log("Alice -> Carol differential =", likeNess);
+        expect(Math.abs(likeNess - 0.50)).to.be.lessThan(0.01);
       }
 
       let gaugeProxyAxialBalance = await axial.balanceOf(gaugeProxy.address);
