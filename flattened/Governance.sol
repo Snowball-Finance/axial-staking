@@ -1,4 +1,4 @@
-// Sources flattened with hardhat v2.8.4 https://hardhat.org
+// Sources flattened with hardhat v2.9.6 https://hardhat.org
 
 // File @openzeppelin/contracts/security/ReentrancyGuard.sol@v4.5.0
 
@@ -69,6 +69,7 @@ abstract contract ReentrancyGuard {
 
 // File @openzeppelin/contracts/utils/Context.sol@v4.5.0
 
+
 // OpenZeppelin Contracts v4.4.1 (utils/Context.sol)
 
 pragma solidity ^0.8.0;
@@ -95,6 +96,7 @@ abstract contract Context {
 
 
 // File @openzeppelin/contracts/access/Ownable.sol@v4.5.0
+
 
 // OpenZeppelin Contracts v4.4.1 (access/Ownable.sol)
 
@@ -173,6 +175,7 @@ abstract contract Ownable is Context {
 
 // File contracts/Governance.sol
 
+
 pragma solidity 0.8.9;
 
 /// @title A governance contract for proposals, voting, and execution
@@ -180,8 +183,6 @@ pragma solidity 0.8.9;
 /// @notice Uses the StakedAxial contract to determine users voting power
 /// @notice Multiple executions can be included in a single yes/no proposal
 /// @notice Multiple-choice proposals are also valid and can be used to select a specific execution context
-
-
 // import "hardhat/console.sol";
 
 interface IsAxial {
@@ -204,14 +205,14 @@ contract Governance is ReentrancyGuard, Ownable {
     uint256 public constant EXPIRATION_PERIOD = 14 days;
 
     /// @notice The required minimum number of votes in support of a proposal for it to succeed
-    uint256 public quorumVotes = 300_000;
-    uint256 public constant QUORUM_VOTES_MINIMUM = 100_000;
-    uint256 public constant QUORUM_VOTES_MAXIMUM = 18_000_000;
+    uint256 public quorumVotes = 10_000_000;
+    uint256 public constant QUORUM_VOTES_MINIMUM = 3_650_000;
+    uint256 public constant QUORUM_VOTES_MAXIMUM = 365_000_000;
 
     /// @notice The minimum number of votes required for an account to create a proposal
-    uint256 public proposalThreshold = 100_000;
-    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 50_000;
-    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 10_000_000;
+    uint256 public proposalThreshold = 200_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MINIMUM = 100_000;
+    uint256 public constant PROPOSAL_THRESHOLD_MAXIMUM = 180_000_000;
 
     /// @notice The total number of proposals
     uint256 public proposalCount;
